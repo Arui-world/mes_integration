@@ -1,0 +1,9 @@
+.page-head .btn-group .btn-group-primary {
+	background-color: #1f2937 !important;
+	border-color: #1f2937 !important;
+	color: #ffffff !important;
+}
+
+.page-head button {
+	transition: background-color 0.2s ease;
+}
