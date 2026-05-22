@@ -42,7 +42,10 @@ app_license = "mit"
 # include js in page
 # page_js = {"page" : "public/js/file.js"}
 
-doctype_js = {"Stock Entry": "public/js/stock_entry.js"}
+doctype_js = {
+	"Material Request": "public/js/material_request.js",
+	"Stock Entry": "public/js/stock_entry.js",
+}
 doctype_list_js = {
 	"Material Request": "public/js/material_request_list.js",
 	"Stock Entry": "public/js/stock_entry_list.js",
