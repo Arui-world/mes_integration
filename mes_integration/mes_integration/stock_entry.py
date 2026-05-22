@@ -6,10 +6,6 @@ from frappe.utils import flt, get_request_session, getdate, now
 from mes_integration.mes_integration.integration_log import create_mes_log, update_mes_log
 
 
-DEFAULT_MES_HOST = "http://192.168.5.8:8027"
-ISSUE_CONFIRM_PATH = "/api/mes/erp-sync/issue-confirm"
-
-
 @frappe.whitelist()
 def push_to_mes(stock_entry_name):
     """
@@ -185,13 +181,10 @@ def validate_issue_confirm_response(response, payload):
 
 
 def get_mes_issue_confirm_url():
-    explicit_url = frappe.conf.get("mes_issue_confirm_url")
-
-    if explicit_url:
-        return explicit_url
-
-    host = frappe.conf.get("mes_host") or frappe.conf.get("mes_base_url") or DEFAULT_MES_HOST
-    return f"{host.rstrip('/')}{ISSUE_CONFIRM_PATH}"
+    url = frappe.conf.get("mes_issue_confirm_url")
+    if not url:
+        frappe.throw(frappe._("缺少 MES 接口配置：mes_issue_confirm_url"))
+    return url
 
 
 def get_mes_error_message(response):
