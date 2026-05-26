@@ -3,6 +3,10 @@ const INJECTION_MOLDING_WEIGHT_FIELDS = [
 	"custom_new_material_weight",
 	"custom_recycled_material_weight"
 ];
+const CUSTOM_ISSUE_MATERIAL_REQUEST_TYPES = [
+	"Material Transfer for Manufacture",
+	INJECTION_MOLDING_PURPOSE
+];
 
 frappe.ui.form.on("Material Request", {
 	onload: function(frm) {
@@ -15,10 +19,12 @@ frappe.ui.form.on("Material Request", {
 
 	refresh: function(frm) {
 		toggle_injection_molding_weight_fields(frm);
+		add_custom_issue_stock_entry_button(frm);
 	},
 
 	material_request_type: function(frm) {
 		toggle_injection_molding_weight_fields(frm);
+		add_custom_issue_stock_entry_button(frm);
 	}
 });
 
@@ -27,6 +33,31 @@ frappe.ui.form.on("Material Request Item", {
 		toggle_injection_molding_weight_fields(frm);
 	}
 });
+
+
+function add_custom_issue_stock_entry_button(frm) {
+	if (
+		frm.doc.docstatus !== 1 ||
+		frm.doc.status === "Stopped" ||
+		!CUSTOM_ISSUE_MATERIAL_REQUEST_TYPES.includes(frm.doc.material_request_type)
+	) {
+		return;
+	}
+
+	const precision = frappe.defaults.get_default("float_precision");
+
+	if (flt(frm.doc.per_ordered, precision) >= 100) {
+		return;
+	}
+
+	frm.add_custom_button(__("发料"), function() {
+		frappe.model.open_mapped_doc({
+			method: "mes_integration.mes_integration.material_request.make_issue_stock_entry",
+			frm: frm
+		});
+	}, __("Create"));
+	frm.page.set_inner_btn_group_as_primary(__("Create"));
+}
 
 function toggle_injection_molding_weight_fields(frm) {
 	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;

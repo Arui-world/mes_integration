@@ -112,7 +112,19 @@ def get_request_source():
 
 
 def is_mes_api_user():
-	return get_current_user() in get_mes_api_users()
+	if not is_api_key_request():
+		return False
+
+	current_user = get_current_user()
+	return current_user in get_mes_api_users()
+
+
+def is_api_key_request():
+	if not getattr(frappe.local, "request", None):
+		return False
+
+	authorization = frappe.get_request_header("Authorization") or ""
+	return authorization.lower().startswith("token ")
 
 
 def get_mes_api_users():
