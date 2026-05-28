@@ -62,5 +62,7 @@ class BOMScrapRateMixin:
 			if save and old_rate != row.rate:
 				row.db_update()
 
-		self.raw_material_cost = total_rm_cost
-		self.base_raw_material_cost = base_total_rm_cost
+		self.raw_material_cost = flt(total_rm_cost, self.precision("raw_material_cost"))
+		self.base_raw_material_cost = flt(
+			base_total_rm_cost, self.precision("base_raw_material_cost")
+		)

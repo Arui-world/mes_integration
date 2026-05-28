@@ -5,7 +5,10 @@
 			return 0;
 		}
 
-		return (flt(row.rate) / (1 - custom_scrap_rate / 100)) * flt(row.qty);
+		return flt(
+			(flt(row.rate) / (1 - custom_scrap_rate / 100)) * flt(row.qty),
+			precision("amount", row)
+		);
 	};
 
 	const calculate_rm_cost = (doc) => {
@@ -15,7 +18,7 @@
 
 		for (const row of rm) {
 			const amount = get_scrap_adjusted_amount(row);
-			const base_amount = amount * flt(doc.conversion_rate);
+			const base_amount = flt(amount * flt(doc.conversion_rate), precision("base_amount", row));
 
 			frappe.model.set_value("BOM Item", row.name, {
 				base_rate: flt(row.rate) * flt(doc.conversion_rate),
@@ -28,12 +31,15 @@
 			base_total_rm_cost += base_amount;
 		}
 
-		cur_frm.set_value("raw_material_cost", total_rm_cost);
-		cur_frm.set_value("base_raw_material_cost", base_total_rm_cost);
+		cur_frm.set_value("raw_material_cost", flt(total_rm_cost, precision("raw_material_cost")));
+		cur_frm.set_value(
+			"base_raw_material_cost",
+			flt(base_total_rm_cost, precision("base_raw_material_cost"))
+		);
 	};
 
 	const calculate_total = (frm) => {
-		if (!window.erpnext?.bom) {
+		if (!window.erpnext?.bom || frm.doc.docstatus === 1) {
 			return;
 		}
 
