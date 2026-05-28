@@ -3,6 +3,14 @@ from frappe import _
 from frappe.utils import flt
 
 
+def _with_precision_tolerance(current_value, new_value, precision):
+	new_value = flt(new_value, precision)
+	if abs(flt(current_value) - new_value) <= 10 ** (-(precision + 1)):
+		return current_value
+
+	return new_value
+
+
 def validate_custom_scrap_rate(doc, method=None):
 	for row in doc.get("items"):
 		custom_scrap_rate = flt(row.get("custom_scrap_rate"))
@@ -45,16 +53,28 @@ class BOMScrapRateMixin:
 					title=_("Invalid Scrap Rate"),
 				)
 
-			row.base_rate = flt(row.rate) * flt(self.conversion_rate)
-			row.amount = flt(
+			base_rate = flt(row.rate) * flt(self.conversion_rate)
+			amount = (
 				flt(row.rate, row.precision("rate"))
 				/ (1 - custom_scrap_rate / 100)
-				* flt(row.qty, row.precision("qty")),
-				row.precision("amount"),
+				* flt(row.qty, row.precision("qty"))
 			)
-			row.base_amount = row.amount * flt(self.conversion_rate)
-			row.qty_consumed_per_unit = flt(row.stock_qty, row.precision("stock_qty")) / flt(
+			base_amount = flt(amount, row.precision("amount")) * flt(self.conversion_rate)
+			qty_consumed_per_unit = flt(row.stock_qty, row.precision("stock_qty")) / flt(
 				self.quantity, self.precision("quantity")
+			)
+
+			row.base_rate = _with_precision_tolerance(
+				row.base_rate, base_rate, row.precision("base_rate")
+			)
+			row.amount = _with_precision_tolerance(row.amount, amount, row.precision("amount"))
+			row.base_amount = _with_precision_tolerance(
+				row.base_amount, base_amount, row.precision("base_amount")
+			)
+			row.qty_consumed_per_unit = _with_precision_tolerance(
+				row.qty_consumed_per_unit,
+				qty_consumed_per_unit,
+				row.precision("qty_consumed_per_unit"),
 			)
 
 			total_rm_cost += row.amount
