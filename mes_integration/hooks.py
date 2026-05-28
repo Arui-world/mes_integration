@@ -45,6 +45,7 @@ app_license = "mit"
 doctype_js = {
 	"Material Request": "public/js/material_request.js",
 	"Stock Entry": "public/js/stock_entry.js",
+	"BOM": "public/js/bom_scrap_rate.js",
 }
 doctype_list_js = {
 	"Material Request": "public/js/material_request_list.js",
@@ -158,6 +159,9 @@ doc_events = {
 		"after_insert": "mes_integration.mes_integration.integration_log.log_inbound_stock_entry",
 		"on_submit": "mes_integration.mes_integration.integration_log.log_inbound_stock_entry",
 	},
+	"BOM": {
+		"validate": "mes_integration.mes_integration.bom_customizations.validate_custom_scrap_rate",
+	},
 }
 
 # Scheduled Tasks
@@ -190,9 +194,9 @@ doc_events = {
 # ------------------------------
 #
 # Specify custom mixins to extend the standard doctype controller.
-# extend_doctype_class = {
-# 	"Task": "mes_integration.custom.task.CustomTaskMixin"
-# }
+extend_doctype_class = {
+	"BOM": "mes_integration.mes_integration.bom_customizations.BOMScrapRateMixin",
+}
 
 # Overriding Methods
 # ------------------------------
