@@ -152,12 +152,17 @@ doctype_css = {"Stock Entry": "public/css/stock_entry.css"}
 # }
 doc_events = {
 	"Material Request": {
+		"validate": "mes_integration.mes_integration.material_request.validate_item_details",
 		"after_insert": "mes_integration.mes_integration.integration_log.log_inbound_material_request",
 		"on_submit": "mes_integration.mes_integration.integration_log.log_inbound_material_request",
 	},
 	"Stock Entry": {
 		"after_insert": "mes_integration.mes_integration.integration_log.log_inbound_stock_entry",
-		"on_submit": "mes_integration.mes_integration.integration_log.log_inbound_stock_entry",
+		"on_submit": [
+			"mes_integration.mes_integration.integration_log.log_inbound_stock_entry",
+			"mes_integration.mes_integration.stock_entry.update_material_request_transferred_qty",
+		],
+		"on_cancel": "mes_integration.mes_integration.stock_entry.update_material_request_transferred_qty",
 	},
 	"BOM": {
 		"validate": "mes_integration.mes_integration.bom_customizations.validate_custom_scrap_rate",

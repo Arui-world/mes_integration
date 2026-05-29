@@ -168,3 +168,66 @@ function show_mes_push_error(r) {
 		message: message
 	});
 }
+
+const MES_MATERIAL_REQUEST_TYPES_FOR_STOCK_ENTRY = [
+	"Material Transfer",
+	"Material Issue",
+	"Customer Provided",
+	"Material Transfer for Manufacture",
+	"Injection Molding Issuance"
+];
+
+frappe.ui.form.on("Stock Entry", {
+	refresh: function(frm) {
+		replace_material_request_button(frm);
+	}
+});
+
+function replace_material_request_button(frm) {
+	if (frm.doc.docstatus !== 0 || frm.doc.subcontracting_inward_order) {
+		return;
+	}
+
+	frm.remove_custom_button(__("Material Request"), __("Get Items From"));
+	frm.add_custom_button(__("Material Request"), function() {
+		open_material_request_mapper(frm);
+	}, __("Get Items From"));
+}
+
+function open_material_request_mapper(frm) {
+	const depends_on_condition = "eval:doc.material_request_type==='Customer Provided'";
+	const d = erpnext.utils.map_current_doc({
+		method: "mes_integration.mes_integration.material_request.make_stock_entry_from_material_request",
+		source_doctype: "Material Request",
+		target: frm,
+		date_field: "schedule_date",
+		setters: [
+			{
+				fieldtype: "Select",
+				label: __("Purpose"),
+				options: MES_MATERIAL_REQUEST_TYPES_FOR_STOCK_ENTRY.join("\n"),
+				fieldname: "material_request_type",
+				default: frm.doc.purpose === "Material Issue" ? "Material Issue" : "Material Transfer",
+				mandatory: 1,
+				change() {
+					if (this.value === "Customer Provided") {
+						d.dialog.get_field("customer").set_focus();
+					}
+				},
+			},
+			{
+				fieldtype: "Link",
+				label: __("Customer"),
+				options: "Customer",
+				fieldname: "customer",
+				depends_on: depends_on_condition,
+				mandatory_depends_on: depends_on_condition,
+			},
+		],
+		get_query_filters: {
+			docstatus: 1,
+			material_request_type: ["in", MES_MATERIAL_REQUEST_TYPES_FOR_STOCK_ENTRY],
+			status: ["not in", ["Transferred", "Issued", "Cancelled", "Stopped"]],
+		},
+	});
+}

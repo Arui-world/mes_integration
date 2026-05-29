@@ -9,6 +9,10 @@ const CUSTOM_ISSUE_MATERIAL_REQUEST_TYPES = [
 ];
 
 frappe.ui.form.on("Material Request", {
+	setup: function(frm) {
+		set_item_detail_queries(frm);
+	},
+
 	onload: function(frm) {
 		toggle_injection_molding_weight_fields(frm);
 	},
@@ -31,9 +35,160 @@ frappe.ui.form.on("Material Request", {
 frappe.ui.form.on("Material Request Item", {
 	items_add: function(frm) {
 		toggle_injection_molding_weight_fields(frm);
+	},
+
+	custom_material_request_item_detail_button: function(frm, cdt, cdn) {
+		show_material_request_item_details(frm, cdt, cdn);
 	}
 });
 
+frappe.ui.form.on("MES Material Request Item Detail", {
+	material_request_item_idx: function(frm, cdt, cdn) {
+		set_item_detail_from_item_row(frm, cdt, cdn);
+	}
+});
+
+function set_item_detail_queries(frm) {
+	frm.set_query("item_code", "custom_item_details", function(doc) {
+		const item_codes = (doc.items || [])
+			.map(function(row) {
+				return row.item_code;
+			})
+			.filter(Boolean);
+
+		return {
+			filters: {
+				name: ["in", item_codes.length ? item_codes : [""]]
+			}
+		};
+	});
+}
+
+function set_item_detail_from_item_row(frm, cdt, cdn) {
+	const detail = locals[cdt][cdn];
+	const item_row = (frm.doc.items || []).find(function(row) {
+		return cint(row.idx) === cint(detail.material_request_item_idx);
+	});
+
+	if (!item_row) {
+		frappe.model.set_value(cdt, cdn, "material_request_item", "");
+		return;
+	}
+
+	frappe.model.set_value(cdt, cdn, {
+		item_code: item_row.item_code,
+		item_name: item_row.item_name,
+		material_request_item: item_row.name
+	});
+}
+
+
+
+function show_material_request_item_details(frm, cdt, cdn) {
+	const item_row = locals[cdt][cdn];
+
+	if (!item_row || !item_row.item_code) {
+		frappe.msgprint(__("请先选择物料编码"));
+		return;
+	}
+
+	const details = get_material_request_item_details(frm, item_row);
+	const dialog = new frappe.ui.Dialog({
+		title: __("物料具体明细 - {0}", [item_row.item_code]),
+		size: "large",
+		fields: [
+			{
+				fieldtype: "HTML",
+				fieldname: "details_html"
+			}
+		]
+	});
+
+	dialog.fields_dict.details_html.$wrapper.html(
+		get_material_request_item_details_html(item_row, details)
+	);
+	dialog.show();
+}
+
+function get_material_request_item_details(frm, item_row) {
+	return (frm.doc.custom_item_details || []).filter(function(detail) {
+		return detail.item_code === item_row.item_code;
+	});
+}
+
+function get_material_request_item_details_html(item_row, details) {
+	const total_order_qty = details.reduce(function(total, detail) {
+		return total + flt(detail.order_qty);
+	}, 0);
+	const total_issue_qty = details.reduce(function(total, detail) {
+		return total + flt(detail.issue_qty);
+	}, 0);
+
+	if (!details.length) {
+		return `
+			<div class="text-muted">
+				${__("当前物料在物料具体明细中没有记录")}
+			</div>
+		`;
+	}
+
+	const rows = details.map(function(detail) {
+		return `
+			<tr>
+				<td>${mes_escape_html(detail.material_request_item_idx || "")}</td>
+				<td>${mes_escape_html(detail.item_code || "")}</td>
+				<td>${mes_escape_html(detail.item_name || item_row.item_name || "")}</td>
+				<td>${mes_escape_html(detail.model || "")}</td>
+				<td>${mes_escape_html(detail.color || "")}</td>
+				<td class="text-right">${mes_format_detail_qty(detail.order_qty)}</td>
+				<td class="text-right">${mes_format_detail_qty(detail.issue_qty)}</td>
+				<td>${mes_escape_html(detail.remarks || "")}</td>
+			</tr>
+		`;
+	}).join("");
+
+	return `
+		<div class="mb-3">
+			<div><strong>${mes_escape_html(item_row.item_code || "")}</strong></div>
+			<div class="text-muted">${mes_escape_html(item_row.item_name || "")}</div>
+		</div>
+		<div class="table-responsive">
+			<table class="table table-bordered table-hover">
+				<thead>
+					<tr>
+						<th>${__("明细行号")}</th>
+						<th>${__("物料编码")}</th>
+						<th>${__("物料名称")}</th>
+						<th>${__("型号")}</th>
+						<th>${__("颜色")}</th>
+						<th class="text-right">${__("订单数量")}</th>
+						<th class="text-right">${__("领料量")}</th>
+						<th>${__("备注")}</th>
+					</tr>
+				</thead>
+				<tbody>
+					${rows}
+				</tbody>
+				<tfoot>
+					<tr>
+						<th colspan="5" class="text-right">${__("合计")}</th>
+						<th class="text-right">${mes_format_detail_qty(total_order_qty)}</th>
+						<th class="text-right">${mes_format_detail_qty(total_issue_qty)}</th>
+						<th></th>
+					</tr>
+				</tfoot>
+			</table>
+		</div>
+	`;
+}
+
+function mes_escape_html(value) {
+	return frappe.utils.escape_html(cstr(value));
+}
+
+function mes_format_detail_qty(value) {
+	return format_number(flt(value), null, frappe.defaults.get_default("float_precision"));
+}
 
 function add_custom_issue_stock_entry_button(frm) {
 	if (
@@ -87,7 +242,8 @@ function apply_injection_molding_item_grid(grid) {
 		["uom", 1],
 		["projected_qty", 1],
 		["custom_new_material_weight", 1],
-		["custom_recycled_material_weight", 1]
+		["custom_recycled_material_weight", 1],
+		["custom_transferred_qty", 1]
 	];
 	const injection_fieldnames = injection_columns.map(function(column) {
 		return column[0];

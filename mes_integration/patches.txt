@@ -4,3 +4,14 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+mes_integration.patches.v1_0.add_material_request_item_details
+
+mes_integration.patches.v1_0.add_material_request_item_transferred_qty
+
+mes_integration.patches.v1_0.add_material_request_and_stock_entry_purpose_options
+
+mes_integration.patches.v1_0.fix_injection_molding_stock_entry_purpose_options
+
+mes_integration.patches.v1_0.remove_injection_molding_stock_entry_purpose
+
+mes_integration.patches.v1_0.add_material_request_item_detail_button

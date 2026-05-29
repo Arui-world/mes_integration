@@ -455,3 +455,124 @@ def validate_mes_stock_entry_data(stock_entry, sales_order):
         if not row.get("s_warehouse") and not row.get("t_warehouse"):
             frappe.throw(frappe._("第 {0} 行至少需要来源仓库或目标仓库").format(row.idx))
 
+def update_material_request_transferred_qty(stock_entry, method=None):
+    mr_item_names = {
+        row.material_request_item
+        for row in stock_entry.get("items", [])
+        if is_material_request_issue_row(row)
+    }
+    if not mr_item_names:
+        return
+
+    transferred_qty_by_item = get_submitted_transferred_qty_by_material_request_item(mr_item_names)
+    mr_names = set()
+
+    for mr_item_name in mr_item_names:
+        transferred_qty = transferred_qty_by_item.get(mr_item_name, 0)
+        mr_name = frappe.db.get_value("Material Request Item", mr_item_name, "parent")
+
+        frappe.db.set_value(
+            "Material Request Item",
+            mr_item_name,
+            {
+                "custom_transferred_qty": transferred_qty,
+                "ordered_qty": transferred_qty,
+            },
+            update_modified=False,
+        )
+
+        if mr_name:
+            mr_names.add(mr_name)
+
+    messages = []
+    for mr_name in mr_names:
+        status_details = update_material_request_issue_status(mr_name)
+        if status_details:
+            messages.append(
+                "{0}: 已发 {1} / 需求 {2}, per_ordered={3}%, status={4}".format(
+                    mr_name,
+                    status_details["issued_qty"],
+                    status_details["total_qty"],
+                    status_details["per_ordered"],
+                    status_details["status"],
+                )
+            )
+
+    if messages:
+        frappe.msgprint("<br>".join(messages), title=frappe._("Material Request 发料状态"))
+
+
+def get_submitted_transferred_qty_by_material_request_item(mr_item_names):
+    placeholders = ", ".join(["%s"] * len(mr_item_names))
+    rows = frappe.db.sql(
+        f"""
+        SELECT
+            sed.material_request_item,
+            SUM(
+                CASE
+                    WHEN IFNULL(se.is_return, 0) = 1 THEN -IFNULL(sed.transfer_qty, 0)
+                    ELSE IFNULL(sed.transfer_qty, 0)
+                END
+            ) AS transferred_qty
+        FROM `tabStock Entry Detail` sed
+        INNER JOIN `tabStock Entry` se ON se.name = sed.parent
+        WHERE sed.material_request_item IN ({placeholders})
+            AND sed.docstatus = 1
+            AND se.docstatus = 1
+            AND IFNULL(sed.s_warehouse, '') != ''
+        GROUP BY sed.material_request_item
+        """,
+        tuple(mr_item_names),
+        as_dict=True,
+    )
+
+    return {row.material_request_item: flt(row.transferred_qty) for row in rows}
+
+
+def is_material_request_issue_row(row):
+    return bool(
+        row.get("material_request")
+        and row.get("material_request_item")
+        and row.get("s_warehouse")
+    )
+
+
+def update_material_request_issue_status(mr_name):
+    mr = frappe.get_doc("Material Request", mr_name)
+    if mr.docstatus != 1 or mr.status in ("Stopped", "Cancelled"):
+        return None
+
+    total_qty = 0
+    issued_qty = 0
+
+    for row in mr.get("items", []):
+        total_qty += flt(row.stock_qty or row.qty)
+        issued_qty += flt(row.get("custom_transferred_qty"))
+
+    per_ordered = (issued_qty / total_qty) * 100 if total_qty else 0
+
+    if per_ordered >= 100:
+        per_ordered = 100
+        status = "Issued"
+    elif per_ordered > 0:
+        status = "Partially Ordered"
+    else:
+        status = "Pending"
+
+    frappe.db.set_value(
+        "Material Request",
+        mr_name,
+        {
+            "per_ordered": per_ordered,
+            "status": status,
+        },
+        update_modified=False,
+    )
+
+    return {
+        "issued_qty": flt(issued_qty),
+        "total_qty": flt(total_qty),
+        "per_ordered": flt(per_ordered),
+        "status": status,
+    }
+
