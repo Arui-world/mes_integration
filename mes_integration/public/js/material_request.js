@@ -153,9 +153,6 @@ function get_material_request_item_details_html(item_row, details) {
 				<td>${mes_escape_html(detail.batch_no || "")}</td>
 				<td>${mes_escape_html(detail.production_order || "")}</td>
 				<td>${mes_escape_html(detail.finished_goods_code || "")}</td>
-				<td>${mes_escape_html(detail.workstation || "")}</td>
-				<td class="mes-detail-date">${mes_escape_html(detail.planned_start_date || "")}</td>
-				<td class="mes-detail-date">${mes_escape_html(detail.planned_end_date || "")}</td>
 				<td class="text-right mes-detail-number">${mes_format_detail_qty(detail.order_qty)}</td>
 				<td class="text-right mes-detail-number">${mes_format_detail_qty(detail.issue_qty)}</td>
 				<td>${mes_escape_html(detail.remarks || "")}</td>
@@ -186,7 +183,7 @@ function get_material_request_item_details_html(item_row, details) {
 				border-radius: 6px;
 			}
 			.mes-item-detail-table {
-				min-width: 1600px;
+				min-width: 1240px;
 				margin-bottom: 0;
 				font-size: 13px;
 			}
@@ -216,9 +213,6 @@ function get_material_request_item_details_html(item_row, details) {
 				white-space: nowrap;
 				font-variant-numeric: tabular-nums;
 			}
-			.mes-detail-date {
-				white-space: nowrap;
-			}
 		</style>
 		<div class="mes-item-detail-summary">
 			<div class="item-code">${mes_escape_html(item_row.item_code || "")}</div>
@@ -236,9 +230,6 @@ function get_material_request_item_details_html(item_row, details) {
 						<th style="width: 170px;">${__("生产批次号")}</th>
 						<th style="width: 150px;">${__("生产工单号")}</th>
 						<th style="width: 120px;">${__("成品编码")}</th>
-						<th style="width: 110px;">${__("工位")}</th>
-						<th style="width: 120px;">${__("计划开始日期")}</th>
-						<th style="width: 120px;">${__("计划结束日期")}</th>
 						<th class="text-right" style="width: 110px;">${__("订单数量")}</th>
 						<th class="text-right" style="width: 110px;">${__("领料量")}</th>
 						<th style="width: 180px;">${__("备注")}</th>
@@ -249,7 +240,7 @@ function get_material_request_item_details_html(item_row, details) {
 				</tbody>
 				<tfoot>
 					<tr>
-						<th colspan="11" class="text-right">${__("合计")}</th>
+						<th colspan="8" class="text-right">${__("合计")}</th>
 						<th class="text-right mes-detail-number">${mes_format_detail_qty(total_order_qty)}</th>
 						<th class="text-right mes-detail-number">${mes_format_detail_qty(total_issue_qty)}</th>
 						<th></th>

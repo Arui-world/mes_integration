@@ -20,9 +20,6 @@
   "batch_no",
   "production_order",
   "finished_goods_code",
-  "planned_start_date",
-  "planned_end_date",
-  "workstation",
   "quantity_section",
   "order_qty",
   "issue_qty",
@@ -105,21 +102,6 @@
    "fieldname": "finished_goods_code",
    "fieldtype": "Data",
    "label": "成品编码"
-  },
-  {
-   "fieldname": "planned_start_date",
-   "fieldtype": "Date",
-   "label": "计划开始日期"
-  },
-  {
-   "fieldname": "planned_end_date",
-   "fieldtype": "Date",
-   "label": "计划结束日期"
-  },
-  {
-   "fieldname": "workstation",
-   "fieldtype": "Data",
-   "label": "工位"
   },
   {
    "fieldname": "quantity_section",
