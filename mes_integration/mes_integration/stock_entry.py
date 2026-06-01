@@ -304,8 +304,8 @@ def create_and_submit_stock_entry_from_mes(data=None, stock_entry=None):
     to Pending Final Payment.
 
     Accepted payloads:
-    1. data={"custom_odt": "ODT-...", "stock_entry": {...}}
-    2. data={...} with custom_odt inside the Stock Entry payload
+    1. data={"sales_order": "SAL-ORD-...", "stock_entry": {...}}
+    2. data={...} with sales_order inside the Stock Entry payload
     """
     payload = parse_json_if_needed(data if data is not None else stock_entry)
 
@@ -323,11 +323,10 @@ def create_and_submit_stock_entry_from_mes(data=None, stock_entry=None):
     if not isinstance(stock_entry_data, dict):
         frappe.throw(frappe._("缺少 Stock Entry 数据或数据格式不正确"))
 
-    sales_order_doc = get_sales_order_by_custom_odt(payload, stock_entry_data)
+    sales_order_doc = get_sales_order_by_name(payload, stock_entry_data)
     validate_sales_order_for_mes_stock_entry(sales_order_doc)
 
     stock_entry_data = stock_entry_data.copy()
-    stock_entry_data.pop("custom_odt", None)
     stock_entry_data.pop("sales_order", None)
     stock_entry_data.pop("sales_order_name", None)
     stock_entry_data["doctype"] = "Stock Entry"
@@ -348,35 +347,26 @@ def create_and_submit_stock_entry_from_mes(data=None, stock_entry=None):
         "stock_entry": stock_entry_doc.name,
         "stock_entry_docstatus": stock_entry_doc.docstatus,
         "sales_order": sales_order_doc.name,
-        "custom_odt": sales_order_doc.get("custom_odt"),
         "process_status": PENDING_FINAL_PAYMENT,
         "timestamp": now(),
     }
 
 
-def get_sales_order_by_custom_odt(payload, stock_entry_data):
-    custom_odt = payload.get("custom_odt") or stock_entry_data.get("custom_odt")
-
-    if not custom_odt:
-        frappe.throw(frappe._("缺少销售订单自定义字段 custom_odt"))
-
-    sales_orders = frappe.get_all(
-        "Sales Order",
-        filters={"custom_odt": custom_odt},
-        pluck="name",
+def get_sales_order_by_name(payload, stock_entry_data):
+    sales_order = (
+        payload.get("sales_order")
+        or payload.get("sales_order_name")
+        or stock_entry_data.get("sales_order")
+        or stock_entry_data.get("sales_order_name")
     )
 
-    if not sales_orders:
-        frappe.throw(frappe._("未找到 custom_odt 为 {0} 的销售订单").format(custom_odt))
+    if not sales_order:
+        frappe.throw(frappe._("缺少销售订单编号 sales_order"))
 
-    if len(sales_orders) > 1:
-        frappe.throw(
-            frappe._("custom_odt {0} 匹配到多个销售订单，请检查销售订单 custom_odt 唯一性").format(
-                custom_odt
-            )
-        )
+    if not frappe.db.exists("Sales Order", sales_order):
+        frappe.throw(frappe._("未找到销售订单 {0}").format(sales_order))
 
-    return frappe.get_doc("Sales Order", sales_orders[0])
+    return frappe.get_doc("Sales Order", sales_order)
 
 
 def parse_json_if_needed(value):

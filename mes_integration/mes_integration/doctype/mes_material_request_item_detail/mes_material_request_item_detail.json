@@ -12,7 +12,17 @@
   "item_name",
   "column_break_item",
   "model",
+  "model_code",
   "color",
+  "color_code",
+  "article_code",
+  "production_section",
+  "batch_no",
+  "production_order",
+  "finished_goods_code",
+  "planned_start_date",
+  "planned_end_date",
+  "workstation",
   "quantity_section",
   "order_qty",
   "issue_qty",
@@ -25,14 +35,14 @@
    "fieldname": "material_request_item_idx",
    "fieldtype": "Int",
    "in_list_view": 1,
-   "label": "\u7269\u6599\u9700\u6c42\u660e\u7ec6\u884c\u53f7"
+   "label": "物料需求明细行号"
   },
   {
    "columns": 2,
    "fieldname": "item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "\u7269\u6599\u7f16\u7801",
+   "label": "物料编码",
    "options": "Item",
    "reqd": 1
   },
@@ -40,7 +50,7 @@
    "fetch_from": "item_code.item_name",
    "fieldname": "item_name",
    "fieldtype": "Data",
-   "label": "\u7269\u6599\u540d\u79f0",
+   "label": "物料名称",
    "read_only": 1
   },
   {
@@ -52,44 +62,94 @@
    "fieldname": "model",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "\u578b\u53f7"
+   "label": "型号"
+  },
+  {
+   "fieldname": "model_code",
+   "fieldtype": "Data",
+   "label": "型号代码"
   },
   {
    "columns": 2,
    "fieldname": "color",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "\u989c\u8272"
+   "label": "颜色"
+  },
+  {
+   "fieldname": "color_code",
+   "fieldtype": "Data",
+   "label": "颜色代码"
+  },
+  {
+   "fieldname": "article_code",
+   "fieldtype": "Data",
+   "label": "成品货号"
+  },
+  {
+   "fieldname": "production_section",
+   "fieldtype": "Section Break",
+   "label": "生产信息"
+  },
+  {
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "label": "生产批次号"
+  },
+  {
+   "fieldname": "production_order",
+   "fieldtype": "Data",
+   "label": "生产工单号"
+  },
+  {
+   "fieldname": "finished_goods_code",
+   "fieldtype": "Data",
+   "label": "成品编码"
+  },
+  {
+   "fieldname": "planned_start_date",
+   "fieldtype": "Date",
+   "label": "计划开始日期"
+  },
+  {
+   "fieldname": "planned_end_date",
+   "fieldtype": "Date",
+   "label": "计划结束日期"
+  },
+  {
+   "fieldname": "workstation",
+   "fieldtype": "Data",
+   "label": "工位"
   },
   {
    "fieldname": "quantity_section",
    "fieldtype": "Section Break",
-   "label": "\u6570\u91cf"
+   "label": "数量"
   },
   {
    "columns": 2,
    "fieldname": "order_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "\u8ba2\u5355\u6570\u91cf"
+   "label": "订单数量"
   },
   {
    "columns": 2,
    "fieldname": "issue_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "\u9886\u6599\u91cf"
+   "label": "领料量"
   },
   {
    "fieldname": "material_request_item",
    "fieldtype": "Data",
    "hidden": 1,
-   "label": "\u7269\u6599\u9700\u6c42\u660e\u7ec6"
+   "label": "物料需求明细"
   },
   {
    "fieldname": "remarks",
    "fieldtype": "Small Text",
-   "label": "\u5907\u6ce8"
+   "label": "备注"
   }
  ],
  "istable": 1,

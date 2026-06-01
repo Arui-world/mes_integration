@@ -108,6 +108,7 @@ function show_material_request_item_details(frm, cdt, cdn) {
 		get_material_request_item_details_html(item_row, details)
 	);
 	dialog.show();
+	dialog.$wrapper.addClass("mes-item-detail-dialog");
 }
 
 function get_material_request_item_details(frm, item_row) {
@@ -135,35 +136,112 @@ function get_material_request_item_details_html(item_row, details) {
 	const rows = details.map(function(detail) {
 		return `
 			<tr>
-				<td>${mes_escape_html(detail.material_request_item_idx || "")}</td>
-				<td>${mes_escape_html(detail.item_code || "")}</td>
-				<td>${mes_escape_html(detail.item_name || item_row.item_name || "")}</td>
-				<td>${mes_escape_html(detail.model || "")}</td>
-				<td>${mes_escape_html(detail.color || "")}</td>
-				<td class="text-right">${mes_format_detail_qty(detail.order_qty)}</td>
-				<td class="text-right">${mes_format_detail_qty(detail.issue_qty)}</td>
+				<td class="text-muted">${mes_escape_html(detail.material_request_item_idx || "")}</td>
+				<td>
+					<div class="mes-detail-primary">${mes_escape_html(detail.item_code || "")}</div>
+					<div class="mes-detail-secondary">${mes_escape_html(detail.item_name || item_row.item_name || "")}</div>
+				</td>
+				<td>
+					<div class="mes-detail-primary">${mes_escape_html(detail.model || "")}</div>
+					<div class="mes-detail-secondary">${mes_escape_html(detail.model_code || "")}</div>
+				</td>
+				<td>
+					<div class="mes-detail-primary">${mes_escape_html(detail.color || "")}</div>
+					<div class="mes-detail-secondary">${mes_escape_html(detail.color_code || "")}</div>
+				</td>
+				<td>${mes_escape_html(detail.article_code || "")}</td>
+				<td>${mes_escape_html(detail.batch_no || "")}</td>
+				<td>${mes_escape_html(detail.production_order || "")}</td>
+				<td>${mes_escape_html(detail.finished_goods_code || "")}</td>
+				<td>${mes_escape_html(detail.workstation || "")}</td>
+				<td class="mes-detail-date">${mes_escape_html(detail.planned_start_date || "")}</td>
+				<td class="mes-detail-date">${mes_escape_html(detail.planned_end_date || "")}</td>
+				<td class="text-right mes-detail-number">${mes_format_detail_qty(detail.order_qty)}</td>
+				<td class="text-right mes-detail-number">${mes_format_detail_qty(detail.issue_qty)}</td>
 				<td>${mes_escape_html(detail.remarks || "")}</td>
 			</tr>
 		`;
 	}).join("");
 
 	return `
-		<div class="mb-3">
-			<div><strong>${mes_escape_html(item_row.item_code || "")}</strong></div>
+		<style>
+			.mes-item-detail-dialog .modal-dialog {
+				max-width: min(1320px, calc(100vw - 48px));
+				width: min(1320px, calc(100vw - 48px));
+			}
+			.mes-item-detail-dialog .modal-body {
+				padding: 20px 24px 24px;
+			}
+			.mes-item-detail-summary {
+				margin-bottom: 16px;
+			}
+			.mes-item-detail-summary .item-code {
+				font-size: 16px;
+				font-weight: 600;
+			}
+			.mes-item-detail-table-wrap {
+				max-height: 62vh;
+				overflow: auto;
+				border: 1px solid var(--border-color);
+				border-radius: 6px;
+			}
+			.mes-item-detail-table {
+				min-width: 1600px;
+				margin-bottom: 0;
+				font-size: 13px;
+			}
+			.mes-item-detail-table th {
+				position: sticky;
+				top: 0;
+				z-index: 1;
+				background: var(--fg-color);
+				white-space: nowrap;
+				vertical-align: middle;
+			}
+			.mes-item-detail-table td {
+				vertical-align: top;
+				word-break: normal;
+			}
+			.mes-detail-primary {
+				font-weight: 500;
+				line-height: 1.35;
+			}
+			.mes-detail-secondary {
+				margin-top: 2px;
+				color: var(--text-muted);
+				font-size: 12px;
+				line-height: 1.3;
+			}
+			.mes-detail-number {
+				white-space: nowrap;
+				font-variant-numeric: tabular-nums;
+			}
+			.mes-detail-date {
+				white-space: nowrap;
+			}
+		</style>
+		<div class="mes-item-detail-summary">
+			<div class="item-code">${mes_escape_html(item_row.item_code || "")}</div>
 			<div class="text-muted">${mes_escape_html(item_row.item_name || "")}</div>
 		</div>
-		<div class="table-responsive">
-			<table class="table table-bordered table-hover">
+		<div class="mes-item-detail-table-wrap">
+			<table class="table table-bordered table-hover mes-item-detail-table">
 				<thead>
 					<tr>
-						<th>${__("明细行号")}</th>
-						<th>${__("物料编码")}</th>
-						<th>${__("物料名称")}</th>
-						<th>${__("型号")}</th>
-						<th>${__("颜色")}</th>
-						<th class="text-right">${__("订单数量")}</th>
-						<th class="text-right">${__("领料量")}</th>
-						<th>${__("备注")}</th>
+						<th style="width: 64px;">${__("明细行号")}</th>
+						<th style="width: 160px;">${__("物料")}</th>
+						<th style="width: 190px;">${__("型号")}</th>
+						<th style="width: 140px;">${__("颜色")}</th>
+						<th style="width: 150px;">${__("成品货号")}</th>
+						<th style="width: 170px;">${__("生产批次号")}</th>
+						<th style="width: 150px;">${__("生产工单号")}</th>
+						<th style="width: 120px;">${__("成品编码")}</th>
+						<th style="width: 110px;">${__("工位")}</th>
+						<th style="width: 120px;">${__("计划开始日期")}</th>
+						<th style="width: 120px;">${__("计划结束日期")}</th>
+						<th class="text-right" style="width: 110px;">${__("订单数量")}</th>
+						<th class="text-right" style="width: 110px;">${__("领料量")}</th>
+						<th style="width: 180px;">${__("备注")}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -171,9 +249,9 @@ function get_material_request_item_details_html(item_row, details) {
 				</tbody>
 				<tfoot>
 					<tr>
-						<th colspan="5" class="text-right">${__("合计")}</th>
-						<th class="text-right">${mes_format_detail_qty(total_order_qty)}</th>
-						<th class="text-right">${mes_format_detail_qty(total_issue_qty)}</th>
+						<th colspan="11" class="text-right">${__("合计")}</th>
+						<th class="text-right mes-detail-number">${mes_format_detail_qty(total_order_qty)}</th>
+						<th class="text-right mes-detail-number">${mes_format_detail_qty(total_issue_qty)}</th>
 						<th></th>
 					</tr>
 				</tfoot>
@@ -243,7 +321,8 @@ function apply_injection_molding_item_grid(grid) {
 		["projected_qty", 1],
 		["custom_new_material_weight", 1],
 		["custom_recycled_material_weight", 1],
-		["custom_transferred_qty", 1]
+		["custom_transferred_qty", 1],
+		["custom_material_request_item_detail_button", 1]
 	];
 	const injection_fieldnames = injection_columns.map(function(column) {
 		return column[0];
