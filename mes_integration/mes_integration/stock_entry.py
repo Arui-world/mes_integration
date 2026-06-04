@@ -31,14 +31,14 @@ def push_to_mes(stock_entry_name):
             reference_doctype="Stock Entry",
             reference_name=stock_entry.name,
             source="ERPNext",
-            request_url=get_mes_issue_confirm_url(),
+            request_url=get_dlm_material_issue_callback_url(),
             error_message=message,
         )
         frappe.db.commit()
         frappe.throw(message)
 
     payload = build_issue_confirm_payload(stock_entry)
-    request_url = get_mes_issue_confirm_url()
+    request_url = get_dlm_material_issue_callback_url()
     mes_log = create_mes_log(
         direction="Outbound",
         event="Stock Entry Issue Confirm",
@@ -50,7 +50,7 @@ def push_to_mes(stock_entry_name):
         request_payload=payload,
     )
 
-    frappe.logger().info(f"推送库存移动单 {stock_entry_name} 到 MES: {frappe.as_json(payload)}")
+    frappe.logger().info(f"推送库存移动单 {stock_entry_name} 到 DLM: {frappe.as_json(payload)}")
 
     try:
         response = post_issue_confirm(payload, request_url)
@@ -62,7 +62,7 @@ def push_to_mes(stock_entry_name):
             status="Success",
             response_payload=response,
             trace_id=response.get("traceId"),
-            processed=response.get("data", {}).get("processed"),
+            processed=get_dlm_processed_count(response),
         )
     except Exception:
         update_mes_log(
@@ -75,9 +75,9 @@ def push_to_mes(stock_entry_name):
 
     return {
         "status": "success",
-        "message": f"库存移动单 {stock_entry_name} 已成功推送到 MES",
+        "message": f"库存移动单 {stock_entry_name} 已成功推送到 DLM",
         "mes_status": "Pushed",
-        "processed": response.get("data", {}).get("processed"),
+        "processed": get_dlm_processed_count(response),
         "trace_id": response.get("traceId"),
         "timestamp": now(),
     }
@@ -87,54 +87,108 @@ def build_issue_confirm_payload(stock_entry):
     validate_stock_entry_for_issue_confirm(stock_entry)
 
     posting_date = getdate(stock_entry.posting_date).isoformat() if stock_entry.posting_date else None
-    items = []
+    material_request = get_issue_material_request(stock_entry)
+    batch_no = stock_entry.get("custom_stock_entry_no")
+    items_by_key = {}
     missing_fields = []
 
     for row in stock_entry.get("items", []):
-        actual_issued_qty = flt(row.get("transfer_qty") or row.get("qty"))
+        issued_qty = flt(row.get("transfer_qty") or row.get("qty"))
 
-        if actual_issued_qty <= 0:
+        if issued_qty <= 0:
             continue
 
-        item = {
-            "production_order_no": row.get("custom_material_request_no")
-            or stock_entry.get("custom_material_request_no"),
-            "item_code": row.get("item_code"),
-            "custom_stock_entry_no": row.get("custom_stock_entry_no")
-            or stock_entry.get("custom_stock_entry_no"),
-            "actual_issued_qty": actual_issued_qty,
-            "posting_date": posting_date,
-            "stock_entry_name": stock_entry.name,
-        }
+        if not row.get("item_code"):
+            missing_fields.append(f"第 {row.idx} 行缺少: item_code")
+            continue
 
-        missing = [
-            field
-            for field in ("production_order_no", "item_code", "custom_stock_entry_no")
-            if not item.get(field)
-        ]
-        if missing:
-            missing_fields.append(f"第 {row.idx} 行缺少: {', '.join(missing)}")
+        issued_unit = get_issued_unit(row)
+        if not issued_unit:
+            missing_fields.append(f"第 {row.idx} 行缺少: issued_unit")
+            continue
 
-        items.append(item)
+        key = (row.get("item_code"), issued_unit)
+        item = items_by_key.setdefault(
+            key,
+            {
+                "item_code": row.get("item_code"),
+                "total_issued_qty": 0,
+                "issued_unit": issued_unit,
+                "batch_details": [],
+            },
+        )
+        item["total_issued_qty"] = flt(item["total_issued_qty"]) + issued_qty
+        item["batch_details"].append(
+            {
+                "batch_no": batch_no,
+                "issued_qty": issued_qty,
+            }
+        )
 
     if missing_fields:
-        frappe.throw("<br>".join(missing_fields), title=frappe._("MES 发料回写字段不完整"))
+        frappe.throw("<br>".join(missing_fields), title=frappe._("DLM 发料回调字段不完整"))
 
+    items = list(items_by_key.values())
     if not items:
-        frappe.throw(frappe._("没有可推送到 MES 的发料明细"))
+        frappe.throw(frappe._("没有可推送到 DLM 的发料明细"))
 
-    return {"items": items}
+    return {
+        "event": "stock_entry.submit",
+        "timestamp": now(),
+        "material_request": material_request,
+        "stock_entry": stock_entry.name,
+        "posting_date": posting_date,
+        "from_warehouse": stock_entry.get("from_warehouse") or get_first_item_value(stock_entry, "s_warehouse"),
+        "to_warehouse": stock_entry.get("to_warehouse") or get_first_item_value(stock_entry, "t_warehouse"),
+        "items": items,
+    }
+
+
+def get_issue_material_request(stock_entry):
+    material_requests = {
+        row.get("material_request")
+        for row in stock_entry.get("items", [])
+        if row.get("material_request") and flt(row.get("transfer_qty") or row.get("qty")) > 0
+    }
+
+    if len(material_requests) > 1:
+        frappe.throw(
+            frappe._("一张物料移动只能回调一个 Material Request，当前包含：{0}").format(
+                ", ".join(sorted(material_requests))
+            )
+        )
+
+    return next(iter(material_requests), None)
+
+
+def get_first_item_value(stock_entry, fieldname):
+    for row in stock_entry.get("items", []):
+        if row.get(fieldname):
+            return row.get(fieldname)
+    return None
+
+
+def get_issued_unit(row):
+    unit = (row.get("stock_uom") or row.get("uom") or "").strip()
+    if not unit:
+        return None
+
+    if unit.lower() in {"kg", "kgs", "kilogram", "kilograms"} or unit in {"千克", "公斤"}:
+        return "kg"
+
+    return "个"
 
 
 def validate_stock_entry_for_issue_confirm(stock_entry):
-    if not stock_entry.get("custom_material_request_no") and not any(
-        row.get("custom_material_request_no") for row in stock_entry.get("items", [])
-    ):
-        frappe.throw(frappe._("请先填写生产汇总单号 custom_material_request_no"))
+    if not stock_entry.get("custom_stock_entry_no"):
+        frappe.throw(frappe._("请先填写物料移动的 custom_stock_entry_no，再推送至 DLM"))
+
+    if not get_issue_material_request(stock_entry):
+        frappe.throw(frappe._("请先关联原生 Material Request，再推送至 DLM"))
 
 
 def post_issue_confirm(payload, url=None):
-    url = url or get_mes_issue_confirm_url()
+    url = url or get_dlm_material_issue_callback_url()
     timeout = flt(frappe.conf.get("mes_request_timeout") or 15)
 
     try:
@@ -148,48 +202,46 @@ def post_issue_confirm(payload, url=None):
         return response.json()
     except RequestException as exc:
         response = getattr(exc, "response", None)
-        log_mes_push_error("MES 发料回写接口 HTTP 调用失败", payload, response)
+        log_mes_push_error("DLM 发料回调接口 HTTP 调用失败", payload, response)
         frappe.throw(
             get_mes_http_error_message(response)
-            or frappe._("MES 发料回写接口调用失败：{0}").format(url)
+            or frappe._("DLM 发料回调接口调用失败：{0}").format(url)
         )
     except ValueError:
-        log_mes_push_error("MES 发料回写接口响应不是 JSON", payload)
-        frappe.throw(frappe._("MES 发料回写接口响应不是 JSON，请查看 Error Log"))
+        log_mes_push_error("DLM 发料回调接口响应不是 JSON", payload)
+        frappe.throw(frappe._("DLM 发料回调接口响应不是 JSON，请查看 Error Log"))
 
 
 def validate_issue_confirm_response(response, payload):
     if not isinstance(response, dict):
-        log_mes_push_error("MES 发料回写接口响应格式异常", payload, response)
-        frappe.throw(frappe._("MES 发料回写接口响应格式异常"))
+        log_mes_push_error("DLM 发料回调接口响应格式异常", payload, response)
+        frappe.throw(frappe._("DLM 发料回调接口响应格式异常"))
 
     if not response.get("success"):
-        log_mes_push_error("MES 发料回写接口返回失败", payload, response)
-        frappe.throw(get_mes_error_message(response) or frappe._("MES 发料回写失败"))
+        log_mes_push_error("DLM 发料回调接口返回失败", payload, response)
+        frappe.throw(get_mes_error_message(response) or frappe._("DLM 发料回调失败"))
 
     data = response.get("data") or {}
+    status = data.get("status")
+    valid_statuses = {"processed", "already_issued", "partial"}
 
-    if not data.get("success"):
-        log_mes_push_error("MES 发料回写存在业务失败", payload, response)
-        frappe.throw(get_mes_error_message(response) or frappe._("MES 发料回写存在业务失败"))
-
-    expected_count = len(payload.get("items") or [])
-    processed_count = flt(data.get("processed"))
-
-    if processed_count != expected_count:
-        log_mes_push_error("MES 发料回写处理条数不一致", payload, response)
+    if status and status not in valid_statuses:
+        log_mes_push_error("DLM 发料回调业务状态异常", payload, response)
         frappe.throw(
-            frappe._("MES 发料回写处理条数不一致，ERP 推送 {0} 条，MES 处理 {1} 条").format(
-                expected_count,
-                processed_count,
-            )
+            get_mes_error_message(response)
+            or frappe._("DLM 发料回调业务状态异常：{0}").format(status)
         )
 
 
-def get_mes_issue_confirm_url():
-    url = frappe.conf.get("mes_issue_confirm_url")
+def get_dlm_processed_count(response):
+    data = response.get("data") or {}
+    return data.get("lines_updated") or data.get("processed")
+
+
+def get_dlm_material_issue_callback_url():
+    url = frappe.conf.get("dlm_material_issue_callback_url")
     if not url:
-        frappe.throw(frappe._("缺少 MES 接口配置：mes_issue_confirm_url"))
+        frappe.throw(frappe._("缺少 DLM 接口配置：dlm_material_issue_callback_url"))
     return url
 
 
@@ -224,7 +276,7 @@ def log_mes_push_error(title, payload, response=None):
 
 
 def get_response_for_log(response):
-    if not response:
+    if response is None:
         return None
 
     if isinstance(response, dict):
@@ -244,7 +296,7 @@ def get_response_for_log(response):
 
 
 def get_mes_http_error_message(response):
-    if not response:
+    if response is None:
         return None
 
     try:

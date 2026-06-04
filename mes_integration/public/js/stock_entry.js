@@ -59,9 +59,9 @@ function display_mes_status(frm) {
 	var statusHtml = '';
 
 	if (mesStatus === "Pushed") {
-		statusHtml = '<span class="mes-status-badge indicator-pill no-indicator-dot whitespace-nowrap blue" style="margin-left: 12px;"><span>MES: 已推送</span></span>';
+		statusHtml = '<span class="mes-status-badge indicator-pill no-indicator-dot whitespace-nowrap blue" style="margin-left: 12px;"><span>DLM: 已推送</span></span>';
 	} else {
-		statusHtml = '<span class="mes-status-badge indicator-pill no-indicator-dot whitespace-nowrap red" style="margin-left: 12px;"><span>MES: 未推送</span></span>';
+		statusHtml = '<span class="mes-status-badge indicator-pill no-indicator-dot whitespace-nowrap red" style="margin-left: 12px;"><span>DLM: 未推送</span></span>';
 	}
 
 	var $pageHead = $('.page-head');
@@ -72,14 +72,15 @@ function display_mes_status(frm) {
 }
 
 function add_push_to_mes_button(frm) {
-	if (frm.doc.docstatus === 1) {
-		if (!frm.custom_buttons["推送至MES"]) {
-			frm._mes_push_button = frm.add_custom_button(__("推送至MES"), function() {
-				push_stock_entry_to_mes(frm);
-			}, __("MES操作"));
+	frm.remove_custom_button(__("推送至MES"), __("MES操作"));
+	frm.remove_custom_button(__("推送至DLM"));
 
-			apply_mes_button_style();
-		}
+	if (frm.doc.docstatus === 1 && frm.doc.custom_stock_entry_no) {
+		frm._mes_push_button = frm.add_custom_button(__("推送至DLM"), function() {
+			push_stock_entry_to_mes(frm);
+		});
+
+		apply_mes_button_style();
 	}
 }
 
@@ -91,7 +92,7 @@ function apply_mes_button_style() {
 			const $this = $(this);
 			const text = $this.text().trim();
 
-			if (text === 'MES操作') {
+			if (text === '推送至DLM') {
 				$this.attr('style', 'background-color: #1f2937 !important; border-color: #1f2937 !important; color: #ffffff !important;')
 					.removeClass('btn-default btn-light')
 					.addClass('btn-primary');
@@ -101,7 +102,7 @@ function apply_mes_button_style() {
 }
 
 function push_stock_entry_to_mes(frm) {
-	const $btn = frm._mes_push_button || $('[data-label="推送至MES"]');
+	const $btn = frm._mes_push_button || $('[data-label="推送至DLM"]');
 	$btn.prop("disabled", true);
 
 	frappe.call({
@@ -110,7 +111,7 @@ function push_stock_entry_to_mes(frm) {
 			stock_entry_name: frm.doc.name
 		},
 		freeze: true,
-		freeze_message: __("正在推送至 MES，请稍候..."),
+		freeze_message: __("正在推送至 DLM，请稍候..."),
 		callback: function(r) {
 			$btn.prop("disabled", false);
 
@@ -134,7 +135,7 @@ function push_stock_entry_to_mes(frm) {
 			frappe.msgprint({
 				title: __("提示"),
 				indicator: "orange",
-				message: __("MES 推送已返回，但没有收到成功结果，请查看 Error Log 或浏览器控制台。")
+				message: __("DLM 推送已返回，但没有收到成功结果，请查看 Error Log 或浏览器控制台。")
 			});
 		},
 		error: function(r) {
@@ -145,7 +146,7 @@ function push_stock_entry_to_mes(frm) {
 }
 
 function show_mes_push_error(r) {
-	let message = __("推送至 MES 失败，请查看 Error Log。");
+	let message = __("推送至 DLM 失败，请查看 Error Log。");
 
 	if (r && r._server_messages) {
 		try {
