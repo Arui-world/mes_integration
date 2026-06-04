@@ -47,8 +47,8 @@ function display_mes_status(frm) {
 		return;
 	}
 
-	var $pageTitle = $('.page-title');
-	if (!$pageTitle.length) {
+	var $pageHead = $('.page-head');
+	if (!$pageHead.length) {
 		return;
 	}
 
@@ -59,16 +59,30 @@ function display_mes_status(frm) {
 	var statusHtml = '';
 
 	if (mesStatus === "Pushed") {
-		statusHtml = '<span class="mes-status-badge indicator-pill no-indicator-dot whitespace-nowrap blue" style="margin-left: 12px;"><span>DLM: 已推送</span></span>';
+		statusHtml = '<span class="mes-status-badge indicator-pill no-indicator-dot whitespace-nowrap blue"><span>' + get_dlm_status_label(true) + '</span></span>';
 	} else {
-		statusHtml = '<span class="mes-status-badge indicator-pill no-indicator-dot whitespace-nowrap red" style="margin-left: 12px;"><span>DLM: 未推送</span></span>';
+		statusHtml = '<span class="mes-status-badge indicator-pill no-indicator-dot whitespace-nowrap red"><span>' + get_dlm_status_label(false) + '</span></span>';
 	}
 
-	var $pageHead = $('.page-head');
-	if ($pageHead.length) {
-		var $target = $pageHead.find('.page-title').length ? $pageHead.find('.page-title') : $pageHead;
-		$target.append(statusHtml);
+	var $titleArea = $pageHead.find('.title-area').first();
+	var $statusIndicator = $titleArea.find('.indicator-pill').not('.mes-status-badge').last();
+
+	if ($statusIndicator.length) {
+		$statusIndicator.after(statusHtml);
+	} else if ($titleArea.length) {
+		$titleArea.append(statusHtml);
+	} else {
+		$pageHead.append(statusHtml);
 	}
+}
+
+function get_dlm_status_label(is_pushed) {
+	const lang = (frappe.boot && frappe.boot.lang) || frappe.lang || '';
+	if (lang.toLowerCase().startsWith('es')) {
+		return is_pushed ? 'DLM: Enviado' : 'DLM: No enviado';
+	}
+
+	return is_pushed ? __('DLM: 已推送') : __('DLM: 未推送');
 }
 
 function add_push_to_mes_button(frm) {
@@ -80,29 +94,20 @@ function add_push_to_mes_button(frm) {
 			push_stock_entry_to_mes(frm);
 		});
 
-		apply_mes_button_style();
+		apply_mes_button_style(frm);
 	}
 }
 
-function apply_mes_button_style() {
+function apply_mes_button_style(frm) {
 	requestAnimationFrame(function() {
-		let $btns = $('.page-head').find('button');
-
-		$btns.each(function() {
-			const $this = $(this);
-			const text = $this.text().trim();
-
-			if (text === '推送至DLM') {
-				$this.attr('style', 'background-color: #1f2937 !important; border-color: #1f2937 !important; color: #ffffff !important;')
-					.removeClass('btn-default btn-light')
-					.addClass('btn-primary');
-			}
-		});
+		const $btn = frm && frm._mes_push_button ? frm._mes_push_button : $('[data-label="' + __("推送至DLM") + '"]');
+		$btn.addClass('mes-push-dlm-button btn-primary')
+			.removeClass('btn-default btn-light');
 	});
 }
 
 function push_stock_entry_to_mes(frm) {
-	const $btn = frm._mes_push_button || $('[data-label="推送至DLM"]');
+	const $btn = frm._mes_push_button || $('.mes-push-dlm-button');
 	$btn.prop("disabled", true);
 
 	frappe.call({

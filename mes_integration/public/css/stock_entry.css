@@ -7,3 +7,27 @@
 .page-head button {
 	transition: background-color 0.2s ease;
 }
+
+.page-head .title-area .mes-status-badge {
+	margin-left: 6px;
+	flex: 0 0 auto;
+}
+
+.page-head .mes-push-dlm-button {
+	background-color: #1f2937 !important;
+	border-color: #1f2937 !important;
+	color: #ffffff !important;
+}
+
+.page-head .mes-push-dlm-button:hover,
+.page-head .mes-push-dlm-button:focus {
+	background-color: #111827 !important;
+	border-color: #111827 !important;
+	color: #ffffff !important;
+}
+
+.page-head .title-area,
+.page-head .page-title,
+.page-head .title-text {
+	min-width: 0;
+}
