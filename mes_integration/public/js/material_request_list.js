@@ -1,18 +1,22 @@
 const native_material_request_list_settings = frappe.listview_settings["Material Request"] || {};
 const native_material_request_indicator = native_material_request_list_settings.get_indicator;
+const mes_issue_material_request_types = [
+	"Material Transfer for Manufacture",
+	"Injection Molding Issuance",
+];
 
 frappe.listview_settings["Material Request"] = {
 	...native_material_request_list_settings,
 	get_indicator: function(doc) {
-		if (doc.material_request_type !== "Material Transfer for Manufacture") {
+		if (!mes_issue_material_request_types.includes(doc.material_request_type)) {
 			return get_native_material_request_indicator(doc);
 		}
 
-		return get_material_transfer_for_manufacture_indicator(doc);
+		return get_mes_issue_material_request_indicator(doc);
 	},
 };
 
-function get_material_transfer_for_manufacture_indicator(doc) {
+function get_mes_issue_material_request_indicator(doc) {
 	const precision = frappe.defaults.get_default("float_precision");
 	const per_ordered = flt(doc.per_ordered, precision);
 
@@ -29,7 +33,7 @@ function get_material_transfer_for_manufacture_indicator(doc) {
 	}
 
 	if (per_ordered < 100) {
-		return [__("Partially Received"), "yellow", "per_ordered,<,100"];
+		return [__("Partially Ordered"), "yellow", "per_ordered,<,100"];
 	}
 
 	if (per_ordered === 100) {
