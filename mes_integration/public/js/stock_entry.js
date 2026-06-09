@@ -328,7 +328,7 @@ function add_push_to_mes_button(frm) {
 		return;
 	}
 
-	if (frm.doc.docstatus === 1 && frm.doc.custom_stock_entry_no) {
+	if (frm.doc.docstatus === 1) {
 		frm._mes_push_button = frm.add_custom_button(__("推送至DLM"), function() {
 			push_stock_entry_to_mes(frm);
 		});

@@ -152,8 +152,6 @@ function get_material_request_item_details_html(item_row, details) {
 				</td>
 				<td>${mes_escape_html(detail.article_code || "")}</td>
 				<td>${mes_escape_html(detail.batch_no || "")}</td>
-				<td>${mes_escape_html(detail.production_order || "")}</td>
-				<td>${mes_escape_html(detail.finished_goods_code || "")}</td>
 				<td class="text-right mes-detail-number">${mes_format_detail_qty(detail.order_qty)}</td>
 				<td class="text-right mes-detail-number">${mes_format_detail_qty(detail.issue_qty)}</td>
 				<td>${mes_escape_html(detail.uom || item_row.uom || item_row.stock_uom || "")}</td>
@@ -185,7 +183,7 @@ function get_material_request_item_details_html(item_row, details) {
 				border-radius: 6px;
 			}
 			.mes-item-detail-table {
-				min-width: 1240px;
+				min-width: 970px;
 				margin-bottom: 0;
 				font-size: 13px;
 			}
@@ -230,8 +228,6 @@ function get_material_request_item_details_html(item_row, details) {
 						<th style="width: 140px;">${__("颜色")}</th>
 						<th style="width: 150px;">${__("成品货号")}</th>
 						<th style="width: 170px;">${__("生产批次号")}</th>
-						<th style="width: 150px;">${__("生产工单号")}</th>
-						<th style="width: 120px;">${__("成品编码")}</th>
 						<th class="text-right" style="width: 110px;">${__("订单数量")}</th>
 						<th class="text-right" style="width: 110px;">${__("需求量")}</th>
 						<th style="width: 80px;">${__("单位")}</th>
@@ -243,7 +239,7 @@ function get_material_request_item_details_html(item_row, details) {
 				</tbody>
 				<tfoot>
 					<tr>
-						<th colspan="8" class="text-right">${__("合计")}</th>
+						<th colspan="6" class="text-right">${__("合计")}</th>
 						<th class="text-right mes-detail-number">${mes_format_detail_qty(total_order_qty)}</th>
 						<th class="text-right mes-detail-number">${mes_format_detail_qty(total_issue_qty)}</th>
 						<th></th>

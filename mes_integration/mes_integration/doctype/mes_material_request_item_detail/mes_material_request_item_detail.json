@@ -18,8 +18,6 @@
   "article_code",
   "production_section",
   "batch_no",
-  "production_order",
-  "finished_goods_code",
   "quantity_section",
   "order_qty",
   "issue_qty",
@@ -93,16 +91,6 @@
    "fieldname": "batch_no",
    "fieldtype": "Data",
    "label": "生产批次号"
-  },
-  {
-   "fieldname": "production_order",
-   "fieldtype": "Data",
-   "label": "生产工单号"
-  },
-  {
-   "fieldname": "finished_goods_code",
-   "fieldtype": "Data",
-   "label": "成品编码"
   },
   {
    "fieldname": "quantity_section",

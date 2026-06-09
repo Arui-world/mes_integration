@@ -90,8 +90,7 @@ def build_issue_confirm_payload(stock_entry):
 
     posting_date = getdate(stock_entry.posting_date).isoformat() if stock_entry.posting_date else None
     material_request = get_issue_material_request(stock_entry)
-    batch_no = stock_entry.get("custom_stock_entry_no")
-    items_by_key = {}
+    items_by_code = {}
     missing_fields = []
 
     for row in stock_entry.get("items", []):
@@ -104,44 +103,26 @@ def build_issue_confirm_payload(stock_entry):
             missing_fields.append(f"第 {row.idx} 行缺少: item_code")
             continue
 
-        issued_unit = get_issued_unit(row)
-        if not issued_unit:
-            missing_fields.append(f"第 {row.idx} 行缺少: issued_unit")
-            continue
-
-        key = (row.get("item_code"), issued_unit)
-        item = items_by_key.setdefault(
-            key,
+        item = items_by_code.setdefault(
+            row.get("item_code"),
             {
                 "item_code": row.get("item_code"),
                 "total_issued_qty": 0,
-                "issued_unit": issued_unit,
-                "batch_details": [],
             },
         )
         item["total_issued_qty"] = flt(item["total_issued_qty"]) + issued_qty
-        item["batch_details"].append(
-            {
-                "batch_no": batch_no,
-                "issued_qty": issued_qty,
-            }
-        )
 
     if missing_fields:
         frappe.throw("<br>".join(missing_fields), title=frappe._("DLM 发料回调字段不完整"))
 
-    items = list(items_by_key.values())
+    items = list(items_by_code.values())
     if not items:
         frappe.throw(frappe._("没有可推送到 DLM 的发料明细"))
 
     return {
-        "event": "stock_entry.submit",
-        "timestamp": now(),
         "material_request": material_request,
         "stock_entry": stock_entry.name,
         "posting_date": posting_date,
-        "from_warehouse": stock_entry.get("from_warehouse") or get_first_item_value(stock_entry, "s_warehouse"),
-        "to_warehouse": stock_entry.get("to_warehouse") or get_first_item_value(stock_entry, "t_warehouse"),
         "items": items,
     }
 
@@ -163,28 +144,7 @@ def get_issue_material_request(stock_entry):
     return next(iter(material_requests), None)
 
 
-def get_first_item_value(stock_entry, fieldname):
-    for row in stock_entry.get("items", []):
-        if row.get(fieldname):
-            return row.get(fieldname)
-    return None
-
-
-def get_issued_unit(row):
-    unit = (row.get("stock_uom") or row.get("uom") or "").strip()
-    if not unit:
-        return None
-
-    if unit.lower() in {"kg", "kgs", "kilogram", "kilograms"} or unit in {"千克", "公斤"}:
-        return "kg"
-
-    return "个"
-
-
 def validate_stock_entry_for_issue_confirm(stock_entry):
-    if not stock_entry.get("custom_stock_entry_no"):
-        frappe.throw(frappe._("请先填写物料移动的 custom_stock_entry_no，再推送至 DLM"))
-
     if not get_issue_material_request(stock_entry):
         frappe.throw(frappe._("请先关联原生 Material Request，再推送至 DLM"))
 
@@ -219,7 +179,7 @@ def validate_issue_confirm_response(response, payload):
         log_mes_push_error("DLM 发料回调接口响应格式异常", payload, response)
         frappe.throw(frappe._("DLM 发料回调接口响应格式异常"))
 
-    if not response.get("success"):
+    if not is_successful_dlm_response(response):
         log_mes_push_error("DLM 发料回调接口返回失败", payload, response)
         frappe.throw(get_mes_error_message(response) or frappe._("DLM 发料回调失败"))
 
@@ -235,9 +195,19 @@ def validate_issue_confirm_response(response, payload):
         )
 
 
+def is_successful_dlm_response(response):
+    if response.get("code") is not None:
+        return str(response.get("code")) == "0"
+
+    return bool(response.get("success"))
+
+
 def get_dlm_processed_count(response):
     data = response.get("data") or {}
-    return data.get("lines_updated") or data.get("processed")
+    if "lines_updated" in data:
+        return data.get("lines_updated")
+
+    return data.get("processed")
 
 
 def get_dlm_material_issue_callback_url():
