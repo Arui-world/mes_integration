@@ -1,9 +1,6 @@
 import frappe
 
 
-DEFAULT_MES_API_USERS = ("mes.api@example.com",)
-
-
 def create_mes_log(
 	direction,
 	event,
@@ -112,11 +109,7 @@ def get_request_source():
 
 
 def is_mes_api_user():
-	if not is_api_key_request():
-		return False
-
-	current_user = get_current_user()
-	return current_user in get_mes_api_users()
+	return is_api_key_request()
 
 
 def is_api_key_request():
@@ -125,18 +118,6 @@ def is_api_key_request():
 
 	authorization = frappe.get_request_header("Authorization") or ""
 	return authorization.lower().startswith("token ")
-
-
-def get_mes_api_users():
-	configured_users = frappe.conf.get("mes_api_users")
-
-	if isinstance(configured_users, str):
-		return {configured_users}
-
-	if configured_users:
-		return set(configured_users)
-
-	return set(DEFAULT_MES_API_USERS)
 
 
 def get_current_user():

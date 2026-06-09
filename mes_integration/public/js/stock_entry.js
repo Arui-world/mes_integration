@@ -1,12 +1,29 @@
 frappe.ui.form.on("Stock Entry", {
 	onload: function(frm) {
+		remember_mes_receipt_stock_entry_no(frm);
+		show_mes_receipt_stock_entry_no(frm);
 		add_push_to_mes_button(frm);
 		display_mes_status(frm);
 	},
 
 	refresh: function(frm) {
+		sync_mes_stock_entry_fields(frm);
+		add_stock_entry_save_and_submit_button(frm);
 		add_push_to_mes_button(frm);
 		display_mes_status(frm);
+	},
+
+	stock_entry_type: function(frm) {
+		clear_manual_mes_receipt_stock_entry_no(frm);
+		sync_mes_stock_entry_fields(frm);
+	},
+
+	validate: function(frm) {
+		sync_mes_stock_entry_fields(frm, { immediate: true });
+	},
+
+	items_add: function(frm, cdt, cdn) {
+		set_manufacturing_warehouse(frm, cdt, cdn);
 	},
 
 	after_save: function(frm) {
@@ -27,6 +44,219 @@ frappe.ui.form.on("Stock Entry", {
 	}
 });
 
+const MES_RECEIPT_STOCK_ENTRY_TYPES = [
+	"Semi Finished Goods Receipt",
+	"Finished Goods Receipt"
+];
+
+function is_mes_receipt_stock_entry(frm) {
+	return frm && frm.doc && MES_RECEIPT_STOCK_ENTRY_TYPES.includes(frm.doc.stock_entry_type);
+}
+
+function add_stock_entry_save_and_submit_button(frm) {
+	frm.remove_custom_button(__("保存并提交"));
+
+	if (!frm || !frm.doc || frm.doc.docstatus !== 0 || has_stock_entry_submit_button(frm)) {
+		return;
+	}
+
+	frm._mes_save_submit_button = frm.add_custom_button(__("保存并提交"), function() {
+		save_and_submit_stock_entry(frm);
+	});
+	apply_stock_entry_save_and_submit_button_style(frm);
+}
+
+function has_stock_entry_submit_button(frm) {
+	const labels = [...new Set(["Submit", __("Submit"), "提交", __("提交")])];
+	return labels.some(function(label) {
+		return $(frm.page.wrapper)
+			.find(`.page-actions button[data-label="${encodeURIComponent(label)}"]`)
+			.length > 0;
+	});
+}
+
+function save_and_submit_stock_entry(frm) {
+	frappe.confirm(
+		__("确认保存并提交此物料移动？"),
+		function() {
+			frm.save("Submit");
+		}
+	);
+}
+
+function apply_stock_entry_save_and_submit_button_style(frm) {
+	requestAnimationFrame(function() {
+		const labels = [...new Set(["保存并提交", __("保存并提交")])];
+		const selector = labels
+			.map(function(label) {
+				return `.page-actions button[data-label="${encodeURIComponent(label)}"]`;
+			})
+			.join(", ");
+
+		$(frm.page.wrapper)
+			.find(selector)
+			.removeClass("btn-default btn-secondary btn-xs")
+			.addClass("btn-primary btn-sm mes-save-submit-button");
+	});
+}
+
+function remember_mes_receipt_stock_entry_no(frm) {
+	if (!is_mes_receipt_stock_entry(frm) || frm.is_new() || !frm.doc.custom_stock_entry_no) {
+		return;
+	}
+
+	frm._mes_receipt_stock_entry_no = frm.doc.custom_stock_entry_no;
+}
+
+function clear_manual_mes_receipt_stock_entry_no(frm) {
+	if (!is_mes_receipt_stock_entry(frm) || !frm.is_new()) {
+		return;
+	}
+
+	frm._mes_receipt_stock_entry_no = "";
+	if (frm.doc.custom_stock_entry_no) {
+		frappe.model.set_value(frm.doctype, frm.docname, "custom_stock_entry_no", "");
+	}
+}
+
+function restore_mes_receipt_stock_entry_no(frm, immediate) {
+	if (!is_mes_receipt_stock_entry(frm) || !frm._mes_receipt_stock_entry_no) {
+		return;
+	}
+
+	const restore = function() {
+		if (!frm.doc.custom_stock_entry_no) {
+			frappe.model.set_value(
+				frm.doctype,
+				frm.docname,
+				"custom_stock_entry_no",
+				frm._mes_receipt_stock_entry_no
+			);
+		}
+	};
+
+	if (immediate) {
+		restore();
+		return;
+	}
+
+	setTimeout(restore, 100);
+}
+
+function show_mes_receipt_stock_entry_no(frm) {
+	if (!is_mes_receipt_stock_entry(frm)) {
+		return;
+	}
+
+	frm.toggle_display("custom_stock_entry_no", true);
+	frm.set_df_property("custom_stock_entry_no", "hidden", 0);
+	frm.refresh_field("custom_stock_entry_no");
+}
+
+const MES_MANUFACTURING_TARGET_WAREHOUSE = "Manufacturing - YC";
+
+frappe.ui.form.on("Stock Entry Detail", {
+	material_request: function(frm, cdt, cdn) {
+		set_manufacturing_warehouse(frm, cdt, cdn);
+		sync_mes_stock_entry_fields(frm);
+	},
+
+	material_request_item: function(frm, cdt, cdn) {
+		set_manufacturing_warehouse(frm, cdt, cdn);
+		sync_mes_stock_entry_fields(frm);
+	},
+
+	custom_material_request_no: function(frm) {
+		sync_material_request_no(frm);
+	}
+});
+
+function sync_mes_stock_entry_fields(frm, options) {
+	options = options || {};
+	clear_manual_mes_receipt_stock_entry_no(frm);
+	remember_mes_receipt_stock_entry_no(frm);
+	show_mes_receipt_stock_entry_no(frm);
+	restore_mes_receipt_stock_entry_no(frm, options.immediate);
+	sync_material_request_no(frm);
+	sync_stock_entry_no_from_material_request(frm);
+	schedule_all_manufacturing_warehouses(frm);
+}
+
+function sync_material_request_no(frm) {
+	if (is_mes_receipt_stock_entry(frm)) {
+		return;
+	}
+
+	const firstRow = get_first_stock_entry_item(frm);
+	const materialRequestNo = firstRow ? firstRow.custom_material_request_no || "" : "";
+	set_form_value_if_changed(frm, "custom_material_request_no", materialRequestNo);
+}
+
+function sync_stock_entry_no_from_material_request(frm) {
+	if (is_mes_receipt_stock_entry(frm)) {
+		return;
+	}
+
+	const firstRow = get_first_stock_entry_item(frm);
+	const materialRequest = firstRow && firstRow.material_request;
+
+	if (!materialRequest) {
+		set_form_value_if_changed(frm, "custom_stock_entry_no", "");
+		return;
+	}
+
+	frappe.db.get_value("Material Request", materialRequest, "custom_stock_entry_no").then(function(r) {
+		const stockEntryNo = r && r.message ? r.message.custom_stock_entry_no || "" : "";
+		set_form_value_if_changed(frm, "custom_stock_entry_no", stockEntryNo);
+	});
+}
+
+function get_first_stock_entry_item(frm) {
+	return frm.doc.items && frm.doc.items.length ? frm.doc.items[0] : null;
+}
+
+function set_form_value_if_changed(frm, fieldname, value) {
+	if (frm.doc[fieldname] === value) {
+		return;
+	}
+
+	frm.set_value(fieldname, value);
+}
+
+function set_manufacturing_warehouse(frm, cdt, cdn) {
+	const row = locals[cdt] && locals[cdt][cdn];
+
+	if (!row || frm.doc.purpose !== "Material Transfer for Manufacture") {
+		return;
+	}
+
+	if ((row.material_request || row.material_request_item) && row.t_warehouse !== MES_MANUFACTURING_TARGET_WAREHOUSE) {
+		frappe.model.set_value(cdt, cdn, "t_warehouse", MES_MANUFACTURING_TARGET_WAREHOUSE);
+	}
+}
+
+function schedule_all_manufacturing_warehouses(frm) {
+	if (frm.doc.purpose !== "Material Transfer for Manufacture") {
+		return;
+	}
+
+	setTimeout(function() {
+		set_all_manufacturing_warehouses(frm);
+	}, 300);
+}
+
+function set_all_manufacturing_warehouses(frm) {
+	if (frm.doc.purpose !== "Material Transfer for Manufacture") {
+		return;
+	}
+
+	(frm.doc.items || []).forEach(function(row) {
+		if ((row.material_request || row.material_request_item) && row.t_warehouse !== MES_MANUFACTURING_TARGET_WAREHOUSE) {
+			frappe.model.set_value(row.doctype, row.name, "t_warehouse", MES_MANUFACTURING_TARGET_WAREHOUSE);
+		}
+	});
+}
+
 $(document).ready(function() {
 	$('.mes-status-badge').remove();
 });
@@ -44,6 +274,11 @@ function display_mes_status(frm) {
 	}
 
 	if (!frm || frm.doctype !== 'Stock Entry' || !frm.doc || !frm.doc.name) {
+		return;
+	}
+
+	if (is_mes_receipt_stock_entry(frm)) {
+		$('.mes-status-badge').remove();
 		return;
 	}
 
@@ -88,6 +323,10 @@ function get_dlm_status_label(is_pushed) {
 function add_push_to_mes_button(frm) {
 	frm.remove_custom_button(__("推送至MES"), __("MES操作"));
 	frm.remove_custom_button(__("推送至DLM"));
+
+	if (is_mes_receipt_stock_entry(frm)) {
+		return;
+	}
 
 	if (frm.doc.docstatus === 1 && frm.doc.custom_stock_entry_no) {
 		frm._mes_push_button = frm.add_custom_button(__("推送至DLM"), function() {

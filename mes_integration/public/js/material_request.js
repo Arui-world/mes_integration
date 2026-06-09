@@ -78,6 +78,7 @@ function set_item_detail_from_item_row(frm, cdt, cdn) {
 	frappe.model.set_value(cdt, cdn, {
 		item_code: item_row.item_code,
 		item_name: item_row.item_name,
+		uom: item_row.uom || item_row.stock_uom,
 		material_request_item: item_row.name
 	});
 }
@@ -155,6 +156,7 @@ function get_material_request_item_details_html(item_row, details) {
 				<td>${mes_escape_html(detail.finished_goods_code || "")}</td>
 				<td class="text-right mes-detail-number">${mes_format_detail_qty(detail.order_qty)}</td>
 				<td class="text-right mes-detail-number">${mes_format_detail_qty(detail.issue_qty)}</td>
+				<td>${mes_escape_html(detail.uom || item_row.uom || item_row.stock_uom || "")}</td>
 				<td>${mes_escape_html(detail.remarks || "")}</td>
 			</tr>
 		`;
@@ -231,7 +233,8 @@ function get_material_request_item_details_html(item_row, details) {
 						<th style="width: 150px;">${__("生产工单号")}</th>
 						<th style="width: 120px;">${__("成品编码")}</th>
 						<th class="text-right" style="width: 110px;">${__("订单数量")}</th>
-						<th class="text-right" style="width: 110px;">${__("领料量")}</th>
+						<th class="text-right" style="width: 110px;">${__("需求量")}</th>
+						<th style="width: 80px;">${__("单位")}</th>
 						<th style="width: 180px;">${__("备注")}</th>
 					</tr>
 				</thead>
@@ -243,6 +246,7 @@ function get_material_request_item_details_html(item_row, details) {
 						<th colspan="8" class="text-right">${__("合计")}</th>
 						<th class="text-right mes-detail-number">${mes_format_detail_qty(total_order_qty)}</th>
 						<th class="text-right mes-detail-number">${mes_format_detail_qty(total_issue_qty)}</th>
+						<th></th>
 						<th></th>
 					</tr>
 				</tfoot>

@@ -34,9 +34,9 @@ def make_issue_stock_entry(source_name, target_doc=None):
         target.transfer_qty = qty * source.conversion_factor
         target.conversion_factor = source.conversion_factor
         target.s_warehouse = (
-            source.get("from_warehouse")
+            source.get("warehouse")
+            or source.get("from_warehouse")
             or source_parent.get("set_from_warehouse")
-            or source.get("warehouse")
         )
         target.t_warehouse = source_parent.get("set_warehouse") or source.get("warehouse")
 
@@ -44,7 +44,10 @@ def make_issue_stock_entry(source_name, target_doc=None):
         stock_entry_purpose = get_stock_entry_purpose(source)
         target.purpose = stock_entry_purpose
         target.stock_entry_type = stock_entry_purpose
-        target.from_warehouse = source.get("set_from_warehouse")
+        target.from_warehouse = (
+            source.get("set_from_warehouse")
+            or get_single_material_request_item_warehouse(source)
+        )
         target.to_warehouse = source.get("set_warehouse")
         target.set_transfer_qty()
         target.set_actual_qty()
@@ -87,6 +90,16 @@ def get_stock_entry_purpose(material_request):
     return "Material Transfer for Manufacture"
 
 
+def get_single_material_request_item_warehouse(material_request):
+    warehouses = {
+        row.get("warehouse")
+        for row in material_request.get("items", [])
+        if row.get("warehouse")
+    }
+
+    return warehouses.pop() if len(warehouses) == 1 else None
+
+
 def validate_item_details(doc, method=None):
     details = doc.get("custom_item_details") or []
     if not details:
@@ -121,6 +134,7 @@ def validate_item_details(doc, method=None):
 
             detail.item_code = item_row.item_code
             detail.item_name = item_row.item_name
+            detail.uom = detail.get("uom") or item_row.get("uom") or item_row.get("stock_uom")
             detail.material_request_item = item_row.name
         elif detail.item_code not in item_codes:
             frappe.throw(
@@ -128,4 +142,6 @@ def validate_item_details(doc, method=None):
                     detail.idx, detail.item_code
                 )
             )
+        elif not detail.get("uom") and detail.item_code:
+            detail.uom = frappe.db.get_value("Item", detail.item_code, "stock_uom")
 

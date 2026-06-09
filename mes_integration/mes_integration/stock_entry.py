@@ -5,6 +5,8 @@ from requests.exceptions import RequestException
 import frappe
 from frappe.utils import flt, get_request_session, getdate, now
 
+from erpnext.stock.doctype.item.item import get_item_defaults
+
 from mes_integration.mes_integration.integration_log import (
     create_mes_log,
     is_mes_api_user,
@@ -344,16 +346,19 @@ def reset_mes_status(stock_entry_name):
         "message": "无需重置"
     }
 
-PENDING_PRODUCTION = "Pending Production"
-PENDING_FINAL_PAYMENT = "Pending Final Payment"
-INVALID_SALES_ORDER_STATUSES = {"Draft", "Cancelled", "Closed"}
+SEMI_FINISHED_GOODS_RECEIPT = "Semi Finished Goods Receipt"
+FINISHED_GOODS_RECEIPT = "Finished Goods Receipt"
+MES_RECEIPT_STOCK_ENTRY_TYPES = {
+    SEMI_FINISHED_GOODS_RECEIPT,
+    FINISHED_GOODS_RECEIPT,
+}
+MES_RECEIPT_FALLBACK_TARGET_WAREHOUSE = "半成品 - YC"
 
 
 @frappe.whitelist()
-def create_and_submit_stock_entry_from_mes(data=None, stock_entry=None):
+def create_draft_stock_entry_from_mes(data=None, stock_entry=None):
     """
-    Create and submit a Stock Entry from MES, then move the Sales Order flow
-    to Pending Final Payment.
+    Create a draft Stock Entry from MES.
 
     Accepted payloads:
     1. data={"sales_order": "SAL-ORD-...", "stock_entry": {...}}
@@ -375,36 +380,56 @@ def create_and_submit_stock_entry_from_mes(data=None, stock_entry=None):
     if not isinstance(stock_entry_data, dict):
         frappe.throw(frappe._("缺少 Stock Entry 数据或数据格式不正确"))
 
-    sales_order_doc = get_sales_order_by_name(payload, stock_entry_data)
-    validate_sales_order_for_mes_stock_entry(sales_order_doc)
-
     stock_entry_data = stock_entry_data.copy()
+    sales_order_doc = get_sales_order_by_name(payload, stock_entry_data, required=False)
+
+    stock_entry_type = stock_entry_data.get("stock_entry_type")
+    validate_mes_receipt_stock_entry_type(stock_entry_type)
+
+    if stock_entry_type == FINISHED_GOODS_RECEIPT:
+        return {
+            "status": "pending_development",
+            "message": frappe._("成品入库接口逻辑暂未实现。"),
+            "stock_entry_type": stock_entry_type,
+            "timestamp": now(),
+        }
+
     stock_entry_data.pop("sales_order", None)
     stock_entry_data.pop("sales_order_name", None)
+    if not stock_entry_data.get("company") and sales_order_doc:
+        stock_entry_data["company"] = sales_order_doc.company
+
     stock_entry_data["doctype"] = "Stock Entry"
+    stock_entry_data["stock_entry_type"] = SEMI_FINISHED_GOODS_RECEIPT
+    stock_entry_data["purpose"] = "Material Receipt"
+    set_mes_stock_entry_default_target_warehouses(stock_entry_data)
 
     stock_entry_doc = frappe.get_doc(stock_entry_data)
+    set_mes_stock_entry_item_defaults(stock_entry_doc)
     validate_mes_stock_entry_data(stock_entry_doc, sales_order_doc)
+    prepare_mes_stock_entry_for_submit(stock_entry_doc)
     stock_entry_doc.insert()
-    stock_entry_doc.submit()
-
-    sales_order_doc.check_permission("write")
-    sales_order_doc.update({"custom_process_status": PENDING_FINAL_PAYMENT})
-    sales_order_doc.save()
-    sales_order_doc.notify_update()
+    stock_entry_doc.db_set("stock_entry_type", SEMI_FINISHED_GOODS_RECEIPT, update_modified=False)
+    stock_entry_doc.reload()
 
     return {
         "status": "success",
-        "message": frappe._("物料移动已创建并提交，销售订单已更新为待收尾款。"),
+        "message": frappe._("物料移动草稿已创建，可在 ERP 审核后直接提交。"),
         "stock_entry": stock_entry_doc.name,
+        "stock_entry_type": stock_entry_doc.stock_entry_type,
         "stock_entry_docstatus": stock_entry_doc.docstatus,
-        "sales_order": sales_order_doc.name,
-        "process_status": PENDING_FINAL_PAYMENT,
+        "sales_order": sales_order_doc.name if sales_order_doc else None,
+        "stock_entry_url": frappe.utils.get_url_to_form("Stock Entry", stock_entry_doc.name),
         "timestamp": now(),
     }
 
 
-def get_sales_order_by_name(payload, stock_entry_data):
+@frappe.whitelist()
+def create_and_submit_stock_entry_from_mes(data=None, stock_entry=None):
+    return create_draft_stock_entry_from_mes(data=data, stock_entry=stock_entry)
+
+
+def get_sales_order_by_name(payload, stock_entry_data, required=True):
     sales_order = (
         payload.get("sales_order")
         or payload.get("sales_order_name")
@@ -413,7 +438,9 @@ def get_sales_order_by_name(payload, stock_entry_data):
     )
 
     if not sales_order:
-        frappe.throw(frappe._("缺少销售订单编号 sales_order"))
+        if required:
+            frappe.throw(frappe._("缺少销售订单编号 sales_order"))
+        return None
 
     if not frappe.db.exists("Sales Order", sales_order):
         frappe.throw(frappe._("未找到销售订单 {0}").format(sales_order))
@@ -436,39 +463,136 @@ def validate_mes_api_user():
 
 
 def validate_mes_stock_entry_permissions():
-    for doctype, permission_type in (("Stock Entry", "create"), ("Stock Entry", "submit"), ("Sales Order", "write")):
-        if not frappe.has_permission(doctype, permission_type):
-            frappe.throw(
-                frappe._("当前用户缺少 {0} 的 {1} 权限").format(doctype, permission_type),
-                frappe.PermissionError,
-            )
-
-
-def validate_sales_order_for_mes_stock_entry(sales_order):
-    sales_order.check_permission("write")
-
-    status = sales_order.get("status")
-    if status in INVALID_SALES_ORDER_STATUSES:
+    if not frappe.has_permission("Stock Entry", "create"):
         frappe.throw(
-            frappe._("销售订单 {0} 原生状态为 {1}，不能通过 MES 入库接口处理").format(
-                sales_order.name,
-                status,
-            )
+            frappe._("当前用户缺少 {0} 的 {1} 权限").format("Stock Entry", "create"),
+            frappe.PermissionError,
         )
 
-    if sales_order.docstatus != 1:
-        frappe.throw(frappe._("销售订单 {0} 必须已提交").format(sales_order.name))
 
-    if sales_order.get("custom_process_status") != PENDING_PRODUCTION:
+def validate_mes_receipt_stock_entry_type(stock_entry_type):
+    if not stock_entry_type:
+        frappe.throw(frappe._("缺少物料移动类型 stock_entry_type"))
+
+    if stock_entry_type not in MES_RECEIPT_STOCK_ENTRY_TYPES:
         frappe.throw(
-            frappe._("只有生产中的销售订单才能更新为待收尾款。销售订单 {0} 当前状态：{1}").format(
-                sales_order.name,
-                sales_order.get("custom_process_status") or "",
+            frappe._("MES 入库接口仅支持移动类型：{0}").format(
+                ", ".join(sorted(MES_RECEIPT_STOCK_ENTRY_TYPES))
             )
         )
 
 
-def validate_mes_stock_entry_data(stock_entry, sales_order):
+def set_mes_stock_entry_default_target_warehouses(stock_entry_data):
+    company = stock_entry_data.get("company")
+    if not company:
+        frappe.throw(frappe._("缺少物料移动公司，无法查询物料默认仓库"))
+
+    validate_mes_receipt_fallback_target_warehouse()
+    missing_items = []
+
+    for index, row in enumerate(stock_entry_data.get("items") or [], start=1):
+        item_code = row.get("item_code")
+        if not item_code:
+            continue
+
+        if not frappe.db.exists("Item", item_code):
+            missing_items.append(frappe._("第 {0} 行物料 {1} 不存在").format(index, item_code))
+            continue
+
+        default_warehouse = (get_item_defaults(item_code, company) or {}).get("default_warehouse")
+        stock_warehouse = None if default_warehouse else get_mes_item_largest_stock_warehouse(item_code, company)
+        row["t_warehouse"] = default_warehouse or stock_warehouse or MES_RECEIPT_FALLBACK_TARGET_WAREHOUSE
+
+    if missing_items:
+        frappe.throw("<br>".join(missing_items), title=frappe._("物料不存在"))
+
+
+def get_mes_item_largest_stock_warehouse(item_code, company):
+    warehouses = frappe.db.sql(
+        """
+        SELECT bin.warehouse
+        FROM `tabBin` bin
+        INNER JOIN `tabWarehouse` warehouse ON warehouse.name = bin.warehouse
+        WHERE bin.item_code = %s
+            AND IFNULL(bin.actual_qty, 0) > 0
+            AND IFNULL(warehouse.is_group, 0) = 0
+            AND IFNULL(warehouse.disabled, 0) = 0
+            AND (IFNULL(warehouse.company, '') = '' OR warehouse.company = %s)
+        ORDER BY bin.actual_qty DESC, bin.warehouse ASC
+        LIMIT 1
+        """,
+        (item_code, company),
+        as_dict=True,
+    )
+
+    return warehouses[0].warehouse if warehouses else None
+
+
+def validate_mes_receipt_fallback_target_warehouse():
+    if not frappe.db.exists("Warehouse", MES_RECEIPT_FALLBACK_TARGET_WAREHOUSE):
+        frappe.throw(
+            frappe._("缺少半成品入库兜底仓库：{0}").format(MES_RECEIPT_FALLBACK_TARGET_WAREHOUSE),
+            title=frappe._("仓库配置错误"),
+        )
+
+
+def set_mes_stock_entry_item_defaults(stock_entry):
+    for row in stock_entry.get("items", []):
+        if not row.get("item_code"):
+            continue
+
+        item = frappe.db.get_value(
+            "Item",
+            row.get("item_code"),
+            ["stock_uom", "item_name", "description"],
+            as_dict=True,
+        )
+        if not item:
+            continue
+
+        row.stock_uom = row.get("stock_uom") or item.stock_uom
+        row.uom = row.get("uom") or row.stock_uom
+        row.item_name = row.get("item_name") or item.item_name
+        row.description = row.get("description") or item.description
+
+        if not flt(row.get("conversion_factor")):
+            row.conversion_factor = get_mes_item_conversion_factor(
+                row.get("item_code"),
+                row.get("uom"),
+                row.get("stock_uom"),
+                row.idx,
+            )
+
+
+def get_mes_item_conversion_factor(item_code, uom, stock_uom, row_idx):
+    if not uom or not stock_uom or uom == stock_uom:
+        return 1
+
+    conversion_factor = frappe.db.get_value(
+        "UOM Conversion Detail",
+        {"parent": item_code, "uom": uom},
+        "conversion_factor",
+    )
+
+    if not conversion_factor:
+        frappe.throw(
+            frappe._("第 {0} 行缺少单位换算系数，且物料 {1} 没有单位 {2} 的换算设置").format(
+                row_idx,
+                item_code,
+                uom,
+            )
+        )
+
+    return flt(conversion_factor)
+
+
+def prepare_mes_stock_entry_for_submit(stock_entry):
+    stock_entry.set_transfer_qty()
+    stock_entry.set_actual_qty()
+    stock_entry.calculate_rate_and_amount(raise_error_if_no_rate=False)
+
+
+def validate_mes_stock_entry_data(stock_entry, sales_order=None):
     if stock_entry.doctype != "Stock Entry":
         frappe.throw(frappe._("只能通过此接口创建 Stock Entry"))
 
@@ -478,10 +602,13 @@ def validate_mes_stock_entry_data(stock_entry, sales_order):
     if not stock_entry.get("purpose"):
         frappe.throw(frappe._("缺少物料移动 Purpose"))
 
-    if not stock_entry.get("company"):
+    if not stock_entry.get("company") and sales_order:
         stock_entry.company = sales_order.company
 
-    if stock_entry.company != sales_order.company:
+    if not stock_entry.get("company"):
+        frappe.throw(frappe._("缺少物料移动公司"))
+
+    if sales_order and stock_entry.company != sales_order.company:
         frappe.throw(frappe._("物料移动公司必须与销售订单公司一致"))
 
     if not stock_entry.get("items"):
@@ -493,6 +620,9 @@ def validate_mes_stock_entry_data(stock_entry, sales_order):
 
         if flt(row.get("qty")) <= 0:
             frappe.throw(frappe._("第 {0} 行数量必须大于 0").format(row.idx))
+
+        if stock_entry.purpose == "Material Receipt" and not row.get("t_warehouse"):
+            frappe.throw(frappe._("第 {0} 行缺少目标仓库").format(row.idx))
 
         if not row.get("s_warehouse") and not row.get("t_warehouse"):
             frappe.throw(frappe._("第 {0} 行至少需要来源仓库或目标仓库").format(row.idx))
