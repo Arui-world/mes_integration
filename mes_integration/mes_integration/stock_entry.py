@@ -24,6 +24,9 @@ def push_to_mes(stock_entry_name):
     if stock_entry.docstatus != 1:
         frappe.throw(frappe._("库存移动单必须已提交才能推送到 MES"))
 
+    if not is_dlm_issue_stock_entry(stock_entry):
+        frappe.throw(frappe._("只有其他出库、工单发料、注塑发料可以推送至 DLM"))
+
     if stock_entry.get("custom_mes_status") == "Pushed":
         message = frappe._("此库存移动单已推送至 MES，无需重复推送")
         create_mes_log(
@@ -294,6 +297,10 @@ def get_mes_http_error_message(response):
     return "<br>".join(parts)
 
 
+def is_dlm_issue_stock_entry(stock_entry):
+    return stock_entry.get("stock_entry_type") in DLM_ISSUE_STOCK_ENTRY_TYPES
+
+
 @frappe.whitelist()
 def reset_mes_status(stock_entry_name):
     """
@@ -323,6 +330,11 @@ MES_RECEIPT_STOCK_ENTRY_TYPES = {
     FINISHED_GOODS_RECEIPT,
 }
 MES_RECEIPT_FALLBACK_TARGET_WAREHOUSE = "半成品 - YC"
+DLM_ISSUE_STOCK_ENTRY_TYPES = {
+    "Material Issue",
+    "Material Transfer for Manufacture",
+    "Injection Molding Issuance",
+}
 
 
 @frappe.whitelist()
@@ -630,22 +642,8 @@ def update_material_request_transferred_qty(stock_entry, method=None):
         if mr_name:
             mr_names.add(mr_name)
 
-    messages = []
     for mr_name in mr_names:
-        status_details = update_material_request_issue_status(mr_name)
-        if status_details:
-            messages.append(
-                "{0}: 已发 {1} / 需求 {2}, per_ordered={3}%, status={4}".format(
-                    mr_name,
-                    status_details["issued_qty"],
-                    status_details["total_qty"],
-                    status_details["per_ordered"],
-                    status_details["status"],
-                )
-            )
-
-    if messages:
-        frappe.msgprint("<br>".join(messages), title=frappe._("Material Request 发料状态"))
+        update_material_request_issue_status(mr_name)
 
 
 def get_submitted_transferred_qty_by_material_request_item(mr_item_names):

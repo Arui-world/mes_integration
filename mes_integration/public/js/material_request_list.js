@@ -1,6 +1,7 @@
 const native_material_request_list_settings = frappe.listview_settings["Material Request"] || {};
 const native_material_request_indicator = native_material_request_list_settings.get_indicator;
 const mes_issue_material_request_types = [
+	"Material Issue",
 	"Material Transfer for Manufacture",
 	"Injection Molding Issuance",
 ];

@@ -3,19 +3,21 @@ frappe.ui.form.on("Stock Entry", {
 		remember_mes_receipt_stock_entry_no(frm);
 		show_mes_receipt_stock_entry_no(frm);
 		add_push_to_mes_button(frm);
-		display_mes_status(frm);
+		schedule_mes_status_display(frm);
 	},
 
 	refresh: function(frm) {
 		sync_mes_stock_entry_fields(frm);
 		add_stock_entry_save_and_submit_button(frm);
 		add_push_to_mes_button(frm);
-		display_mes_status(frm);
+		schedule_mes_status_display(frm);
 	},
 
 	stock_entry_type: function(frm) {
 		clear_manual_mes_receipt_stock_entry_no(frm);
 		sync_mes_stock_entry_fields(frm);
+		add_push_to_mes_button(frm);
+		schedule_mes_status_display(frm);
 	},
 
 	validate: function(frm) {
@@ -24,6 +26,14 @@ frappe.ui.form.on("Stock Entry", {
 
 	items_add: function(frm, cdt, cdn) {
 		set_manufacturing_warehouse(frm, cdt, cdn);
+	},
+
+	on_submit: function(frm) {
+		if (frm._mes_prompt_after_save_submit) {
+			return;
+		}
+
+		show_push_to_dlm_prompt(frm);
 	},
 
 	after_save: function(frm) {
@@ -48,9 +58,28 @@ const MES_RECEIPT_STOCK_ENTRY_TYPES = [
 	"Semi Finished Goods Receipt",
 	"Finished Goods Receipt"
 ];
+const MES_DLM_STOCK_ENTRY_TYPES = [
+	"Material Issue",
+	"Material Transfer for Manufacture",
+	"Injection Molding Issuance"
+];
 
 function is_mes_receipt_stock_entry(frm) {
 	return frm && frm.doc && MES_RECEIPT_STOCK_ENTRY_TYPES.includes(frm.doc.stock_entry_type);
+}
+
+function is_dlm_issue_stock_entry(frm) {
+	return frm && frm.doc && MES_DLM_STOCK_ENTRY_TYPES.includes(frm.doc.stock_entry_type);
+}
+
+function can_push_stock_entry_to_dlm(frm) {
+	return (
+		frm &&
+		frm.doc &&
+		frm.doc.docstatus === 1 &&
+		is_dlm_issue_stock_entry(frm) &&
+		frm.doc.custom_mes_status !== "Pushed"
+	);
 }
 
 function add_stock_entry_save_and_submit_button(frm) {
@@ -79,7 +108,17 @@ function save_and_submit_stock_entry(frm) {
 	frappe.confirm(
 		__("确认保存并提交此物料移动？"),
 		function() {
-			frm.save("Submit");
+			frm._mes_prompt_after_save_submit = true;
+			frm.save("Submit")
+				.then(function() {
+					frm._mes_prompt_after_save_submit = false;
+					setTimeout(function() {
+						show_push_to_dlm_prompt(frm);
+					}, 300);
+				})
+				.catch(function() {
+					frm._mes_prompt_after_save_submit = false;
+				});
 		}
 	);
 }
@@ -258,57 +297,84 @@ function set_all_manufacturing_warehouses(frm) {
 }
 
 $(document).ready(function() {
-	$('.mes-status-badge').remove();
+	remove_mes_status_badge(window.cur_frm);
 });
 
 $(document).on('page-change', function() {
-	$('.mes-status-badge').remove();
+	remove_mes_status_badge(window.cur_frm);
+	if (window.cur_frm && window.cur_frm.doctype === 'Stock Entry') {
+		schedule_mes_status_display(window.cur_frm);
+	}
 });
 
-function display_mes_status(frm) {
+function schedule_mes_status_display(frm) {
+	[0, 150, 350, 700, 1200].forEach(function(delay) {
+		setTimeout(function() {
+			display_mes_status(frm, 0);
+		}, delay);
+	});
+}
+
+function display_mes_status(frm, attempt) {
+	attempt = attempt || 0;
 	var currentUrl = window.location.pathname;
 
 	if (!currentUrl || currentUrl === '/desk/stock-entry') {
-		$('.mes-status-badge').remove();
+		remove_mes_status_badge(frm);
 		return;
 	}
 
-	if (!frm || frm.doctype !== 'Stock Entry' || !frm.doc || !frm.doc.name) {
+	if (!frm || frm.doctype !== 'Stock Entry' || !frm.doc || !frm.doc.name || !frm.page) {
+		retry_mes_status_display(frm, attempt);
 		return;
 	}
 
-	if (is_mes_receipt_stock_entry(frm)) {
-		$('.mes-status-badge').remove();
+	if (!is_dlm_issue_stock_entry(frm)) {
+		remove_mes_status_badge(frm);
 		return;
 	}
 
-	var $pageHead = $('.page-head');
-	if (!$pageHead.length) {
+	var $titleArea = frm.page.$title_area;
+	if (!$titleArea || !$titleArea.length) {
+		retry_mes_status_display(frm, attempt);
 		return;
 	}
 
 	var mesStatus = frm.doc.custom_mes_status || "Unpushed";
+	var statusHtml = mesStatus === "Pushed"
+		? '<span class="mes-status-badge indicator-pill no-indicator-dot whitespace-nowrap blue"><span>' + get_dlm_status_label(true) + '</span></span>'
+		: '<span class="mes-status-badge indicator-pill no-indicator-dot whitespace-nowrap red"><span>' + get_dlm_status_label(false) + '</span></span>';
 
-	$('.mes-status-badge').remove();
+	remove_mes_status_badge(frm);
 
-	var statusHtml = '';
-
-	if (mesStatus === "Pushed") {
-		statusHtml = '<span class="mes-status-badge indicator-pill no-indicator-dot whitespace-nowrap blue"><span>' + get_dlm_status_label(true) + '</span></span>';
-	} else {
-		statusHtml = '<span class="mes-status-badge indicator-pill no-indicator-dot whitespace-nowrap red"><span>' + get_dlm_status_label(false) + '</span></span>';
-	}
-
-	var $titleArea = $pageHead.find('.title-area').first();
-	var $statusIndicator = $titleArea.find('.indicator-pill').not('.mes-status-badge').last();
+	var $statusIndicator = frm.page.indicator && frm.page.indicator.length
+		? frm.page.indicator
+		: $titleArea.find('.indicator-pill').not('.mes-status-badge').last();
 
 	if ($statusIndicator.length) {
 		$statusIndicator.after(statusHtml);
-	} else if ($titleArea.length) {
-		$titleArea.append(statusHtml);
 	} else {
-		$pageHead.append(statusHtml);
+		$titleArea.append(statusHtml);
 	}
+}
+
+function remove_mes_status_badge(frm) {
+	if (frm && frm.page && frm.page.wrapper) {
+		frm.page.wrapper.find('.mes-status-badge').remove();
+		return;
+	}
+
+	$('.mes-status-badge').remove();
+}
+
+function retry_mes_status_display(frm, attempt) {
+	if (attempt >= 8) {
+		return;
+	}
+
+	setTimeout(function() {
+		display_mes_status(frm, attempt + 1);
+	}, 150);
 }
 
 function get_dlm_status_label(is_pushed) {
@@ -324,7 +390,7 @@ function add_push_to_mes_button(frm) {
 	frm.remove_custom_button(__("推送至MES"), __("MES操作"));
 	frm.remove_custom_button(__("推送至DLM"));
 
-	if (is_mes_receipt_stock_entry(frm)) {
+	if (!can_push_stock_entry_to_dlm(frm)) {
 		return;
 	}
 
@@ -335,6 +401,30 @@ function add_push_to_mes_button(frm) {
 
 		apply_mes_button_style(frm);
 	}
+}
+
+function show_push_to_dlm_prompt(frm) {
+	if (!can_push_stock_entry_to_dlm(frm)) {
+		return;
+	}
+
+	const dialog = new frappe.ui.Dialog({
+		title: __("是否立即推送至DLM？"),
+		fields: [
+			{
+				fieldtype: "HTML",
+				fieldname: "message",
+				options: `<p class="text-muted">${__("物料移动已提交。是否立即推送发料结果至 DLM？")}</p>`
+			}
+		],
+		primary_action_label: __("推送至DLM"),
+		primary_action: function() {
+			dialog.hide();
+			push_stock_entry_to_mes(frm);
+		}
+	});
+
+	dialog.show();
 }
 
 function apply_mes_button_style(frm) {

@@ -5,6 +5,7 @@ from frappe.utils import cint, flt
 
 
 CUSTOM_ISSUE_MATERIAL_REQUEST_TYPES = (
+    "Material Issue",
     "Material Transfer for Manufacture",
     "Injection Molding Issuance",
 )
@@ -34,21 +35,23 @@ def make_issue_stock_entry(source_name, target_doc=None):
         target.transfer_qty = qty * source.conversion_factor
         target.conversion_factor = source.conversion_factor
         target.s_warehouse = (
-            source.get("warehouse")
-            or source.get("from_warehouse")
+            source.get("from_warehouse")
+            or source.get("warehouse")
             or source_parent.get("set_from_warehouse")
         )
-        target.t_warehouse = source_parent.get("set_warehouse") or source.get("warehouse")
+        if get_stock_entry_purpose(source_parent) != "Material Issue":
+            target.t_warehouse = source_parent.get("set_warehouse") or source.get("warehouse")
 
     def set_missing_values(source, target):
         stock_entry_purpose = get_stock_entry_purpose(source)
         target.purpose = stock_entry_purpose
-        target.stock_entry_type = stock_entry_purpose
+        target.stock_entry_type = get_stock_entry_type(source)
         target.from_warehouse = (
             source.get("set_from_warehouse")
-            or get_single_material_request_item_warehouse(source)
+            or get_single_material_request_item_source_warehouse(source)
         )
-        target.to_warehouse = source.get("set_warehouse")
+        if stock_entry_purpose != "Material Issue":
+            target.to_warehouse = source.get("set_warehouse")
         target.set_transfer_qty()
         target.set_actual_qty()
         target.calculate_rate_and_amount(raise_error_if_no_rate=False)
@@ -87,14 +90,24 @@ def make_issue_stock_entry(source_name, target_doc=None):
 
 
 def get_stock_entry_purpose(material_request):
+    if material_request.material_request_type == "Material Issue":
+        return "Material Issue"
+
     return "Material Transfer for Manufacture"
 
 
-def get_single_material_request_item_warehouse(material_request):
+def get_stock_entry_type(material_request):
+    if material_request.material_request_type == "Injection Molding Issuance":
+        return "Injection Molding Issuance"
+
+    return get_stock_entry_purpose(material_request)
+
+
+def get_single_material_request_item_source_warehouse(material_request):
     warehouses = {
-        row.get("warehouse")
+        row.get("from_warehouse") or row.get("warehouse")
         for row in material_request.get("items", [])
-        if row.get("warehouse")
+        if row.get("from_warehouse") or row.get("warehouse")
     }
 
     return warehouses.pop() if len(warehouses) == 1 else None

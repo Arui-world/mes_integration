@@ -4,6 +4,7 @@ const INJECTION_MOLDING_WEIGHT_FIELDS = [
 	"custom_recycled_material_weight"
 ];
 const CUSTOM_ISSUE_MATERIAL_REQUEST_TYPES = [
+	"Material Issue",
 	"Material Transfer for Manufacture",
 	INJECTION_MOLDING_PURPOSE
 ];
@@ -24,6 +25,10 @@ frappe.ui.form.on("Material Request", {
 	refresh: function(frm) {
 		toggle_injection_molding_weight_fields(frm);
 		add_custom_issue_stock_entry_button(frm);
+	},
+
+	on_submit: function(frm) {
+		show_issue_stock_entry_prompt(frm);
 	},
 
 	material_request_type: function(frm) {
@@ -260,27 +265,58 @@ function mes_format_detail_qty(value) {
 }
 
 function add_custom_issue_stock_entry_button(frm) {
+	if (!can_create_issue_stock_entry(frm)) {
+		return;
+	}
+
+	frm.add_custom_button(__("发料"), function() {
+		open_issue_stock_entry(frm);
+	}, __("Create"));
+	frm.page.set_inner_btn_group_as_primary(__("Create"));
+}
+
+function show_issue_stock_entry_prompt(frm) {
+	if (!can_create_issue_stock_entry(frm)) {
+		return;
+	}
+
+	const dialog = new frappe.ui.Dialog({
+		title: __("是否立即发料？"),
+		fields: [
+			{
+				fieldtype: "HTML",
+				fieldname: "message",
+				options: `<p class="text-muted">${__("物料需求已提交。是否立即创建物料移动并发料？")}</p>`
+			}
+		],
+		primary_action_label: __("发料"),
+		primary_action: function() {
+			dialog.hide();
+			open_issue_stock_entry(frm);
+		}
+	});
+
+	dialog.show();
+}
+
+function can_create_issue_stock_entry(frm) {
 	if (
 		frm.doc.docstatus !== 1 ||
 		frm.doc.status === "Stopped" ||
 		!CUSTOM_ISSUE_MATERIAL_REQUEST_TYPES.includes(frm.doc.material_request_type)
 	) {
-		return;
+		return false;
 	}
 
 	const precision = frappe.defaults.get_default("float_precision");
+	return flt(frm.doc.per_ordered, precision) < 100;
+}
 
-	if (flt(frm.doc.per_ordered, precision) >= 100) {
-		return;
-	}
-
-	frm.add_custom_button(__("发料"), function() {
-		frappe.model.open_mapped_doc({
-			method: "mes_integration.mes_integration.material_request.make_issue_stock_entry",
-			frm: frm
-		});
-	}, __("Create"));
-	frm.page.set_inner_btn_group_as_primary(__("Create"));
+function open_issue_stock_entry(frm) {
+	frappe.model.open_mapped_doc({
+		method: "mes_integration.mes_integration.material_request.make_issue_stock_entry",
+		frm: frm
+	});
 }
 
 function toggle_injection_molding_weight_fields(frm) {
@@ -307,12 +343,12 @@ function apply_injection_molding_item_grid(grid) {
 		["item_code", 2],
 		["schedule_date", 2],
 		["qty", 1],
+		["custom_transferred_qty", 1],
 		["warehouse", 2],
 		["uom", 1],
 		["projected_qty", 1],
 		["custom_new_material_weight", 1],
 		["custom_recycled_material_weight", 1],
-		["custom_transferred_qty", 1],
 		["custom_material_request_item_detail_button", 1]
 	];
 	const injection_fieldnames = injection_columns.map(function(column) {
