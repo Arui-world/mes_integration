@@ -16,6 +16,7 @@ frappe.ui.form.on("Stock Entry", {
 	stock_entry_type: function(frm) {
 		clear_manual_mes_receipt_stock_entry_no(frm);
 		sync_mes_stock_entry_fields(frm);
+		add_stock_entry_save_and_submit_button(frm);
 		add_push_to_mes_button(frm);
 		schedule_mes_status_display(frm);
 	},
@@ -84,8 +85,17 @@ function can_push_stock_entry_to_dlm(frm) {
 
 function add_stock_entry_save_and_submit_button(frm) {
 	frm.remove_custom_button(__("保存并提交"));
+	frm.remove_custom_button(__("推送至DLM"));
 
 	if (!frm || !frm.doc || frm.doc.docstatus !== 0 || has_stock_entry_submit_button(frm)) {
+		return;
+	}
+
+	if (can_save_submit_and_push_stock_entry_to_dlm(frm)) {
+		frm._mes_save_submit_button = frm.add_custom_button(__("推送至DLM"), function() {
+			save_submit_and_push_stock_entry_to_dlm(frm);
+		});
+		apply_stock_entry_save_and_submit_button_style(frm);
 		return;
 	}
 
@@ -123,9 +133,38 @@ function save_and_submit_stock_entry(frm) {
 	);
 }
 
+function can_save_submit_and_push_stock_entry_to_dlm(frm) {
+	return (
+		frm &&
+		frm.doc &&
+		frm.doc.docstatus === 0 &&
+		["Material Issue", "Injection Molding Issuance"].includes(frm.doc.stock_entry_type) &&
+		frm.doc.custom_mes_status !== "Pushed"
+	);
+}
+
+function save_submit_and_push_stock_entry_to_dlm(frm) {
+	frappe.confirm(
+		__("确认保存、提交并推送此物料移动至 DLM？"),
+		function() {
+			frm._mes_prompt_after_save_submit = true;
+			frm.save("Submit")
+				.then(function() {
+					frm._mes_prompt_after_save_submit = false;
+					setTimeout(function() {
+						push_stock_entry_to_mes(frm);
+					}, 300);
+				})
+				.catch(function() {
+					frm._mes_prompt_after_save_submit = false;
+				});
+		}
+	);
+}
+
 function apply_stock_entry_save_and_submit_button_style(frm) {
 	requestAnimationFrame(function() {
-		const labels = [...new Set(["保存并提交", __("保存并提交")])];
+		const labels = [...new Set(["保存并提交", __("保存并提交"), "推送至DLM", __("推送至DLM")])];
 		const selector = labels
 			.map(function(label) {
 				return `.page-actions button[data-label="${encodeURIComponent(label)}"]`;
@@ -388,6 +427,11 @@ function get_dlm_status_label(is_pushed) {
 
 function add_push_to_mes_button(frm) {
 	frm.remove_custom_button(__("推送至MES"), __("MES操作"));
+
+	if (!frm || !frm.doc || frm.doc.docstatus !== 1) {
+		return;
+	}
+
 	frm.remove_custom_button(__("推送至DLM"));
 
 	if (!can_push_stock_entry_to_dlm(frm)) {
@@ -436,6 +480,13 @@ function apply_mes_button_style(frm) {
 }
 
 function push_stock_entry_to_mes(frm) {
+	if (frm._mes_push_in_progress) {
+		return;
+	}
+
+	frm._mes_push_in_progress = true;
+	frm._mes_push_error_shown = false;
+
 	const $btn = frm._mes_push_button || $('.mes-push-dlm-button');
 	$btn.prop("disabled", true);
 
@@ -448,9 +499,10 @@ function push_stock_entry_to_mes(frm) {
 		freeze_message: __("正在推送至 DLM，请稍候..."),
 		callback: function(r) {
 			$btn.prop("disabled", false);
+			frm._mes_push_in_progress = false;
 
 			if (r.exc) {
-				show_mes_push_error(r);
+				show_mes_push_error(frm, r);
 				return;
 			}
 
@@ -474,20 +526,38 @@ function push_stock_entry_to_mes(frm) {
 		},
 		error: function(r) {
 			$btn.prop("disabled", false);
-			show_mes_push_error(r);
+			frm._mes_push_in_progress = false;
+			show_mes_push_error(frm, r);
 		}
 	});
 }
 
-function show_mes_push_error(r) {
+function show_mes_push_error(frm, r) {
+	if (frm && frm._mes_push_error_shown) {
+		return;
+	}
+
+	if (r && r._server_messages) {
+		if (frm) {
+			frm._mes_push_error_shown = true;
+		}
+		return;
+	}
+
+	if (frm) {
+		frm._mes_push_error_shown = true;
+	}
+
 	let message = __("推送至 DLM 失败，请查看 Error Log。");
 
 	if (r && r._server_messages) {
 		try {
 			const serverMessages = JSON.parse(r._server_messages);
-			message = serverMessages.map(function(item) {
+			const messages = serverMessages.map(function(item) {
 				return JSON.parse(item).message;
-			}).join("<br>");
+			}).filter(Boolean);
+
+			message = dedupe_mes_push_messages(messages).join("<br>");
 		} catch (e) {
 			message = r._server_messages;
 		}
@@ -502,6 +572,12 @@ function show_mes_push_error(r) {
 		indicator: "red",
 		message: message
 	});
+}
+
+function dedupe_mes_push_messages(messages) {
+	return [...new Set(messages.map(function(message) {
+		return String(message || "").trim();
+	}).filter(Boolean))];
 }
 
 const MES_MATERIAL_REQUEST_TYPES_FOR_STOCK_ENTRY = [

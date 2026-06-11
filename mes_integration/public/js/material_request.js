@@ -8,6 +8,10 @@ const CUSTOM_ISSUE_MATERIAL_REQUEST_TYPES = [
 	"Material Transfer for Manufacture",
 	INJECTION_MOLDING_PURPOSE
 ];
+const SUBMIT_AND_ISSUE_MATERIAL_REQUEST_TYPES = [
+	"Material Issue",
+	INJECTION_MOLDING_PURPOSE
+];
 
 frappe.ui.form.on("Material Request", {
 	setup: function(frm) {
@@ -24,15 +28,21 @@ frappe.ui.form.on("Material Request", {
 
 	refresh: function(frm) {
 		toggle_injection_molding_weight_fields(frm);
+		apply_injection_molding_material_issue_warehouse_labels(frm);
 		add_custom_issue_stock_entry_button(frm);
 	},
 
 	on_submit: function(frm) {
+		if (frm._mes_submit_and_issue) {
+			return;
+		}
+
 		show_issue_stock_entry_prompt(frm);
 	},
 
 	material_request_type: function(frm) {
 		toggle_injection_molding_weight_fields(frm);
+		apply_injection_molding_material_issue_warehouse_labels(frm);
 		add_custom_issue_stock_entry_button(frm);
 	}
 });
@@ -265,6 +275,16 @@ function mes_format_detail_qty(value) {
 }
 
 function add_custom_issue_stock_entry_button(frm) {
+	frm.remove_custom_button(__("提交并发料"));
+
+	if (can_submit_and_issue_material_request(frm)) {
+		frm.add_custom_button(__("提交并发料"), function() {
+			submit_and_issue_material_request(frm);
+		});
+		style_submit_and_issue_button(frm);
+		return;
+	}
+
 	if (!can_create_issue_stock_entry(frm)) {
 		return;
 	}
@@ -273,6 +293,51 @@ function add_custom_issue_stock_entry_button(frm) {
 		open_issue_stock_entry(frm);
 	}, __("Create"));
 	frm.page.set_inner_btn_group_as_primary(__("Create"));
+}
+
+function can_submit_and_issue_material_request(frm) {
+	return (
+		frm &&
+		frm.doc &&
+		frm.doc.docstatus === 0 &&
+		!frm.is_new() &&
+		SUBMIT_AND_ISSUE_MATERIAL_REQUEST_TYPES.includes(frm.doc.material_request_type)
+	);
+}
+
+function submit_and_issue_material_request(frm) {
+	frappe.confirm(
+		__("确认提交此物料需求并立即发料？"),
+		function() {
+			frm._mes_submit_and_issue = true;
+			frm.save("Submit")
+				.then(function() {
+					frm._mes_submit_and_issue = false;
+					setTimeout(function() {
+						open_issue_stock_entry(frm);
+					}, 300);
+				})
+				.catch(function() {
+					frm._mes_submit_and_issue = false;
+				});
+		}
+	);
+}
+
+function style_submit_and_issue_button(frm) {
+	requestAnimationFrame(function() {
+		const labels = [...new Set(["提交并发料", __("提交并发料")])];
+		const selector = labels
+			.map(function(label) {
+				return `.page-actions button[data-label="${encodeURIComponent(label)}"]`;
+			})
+			.join(", ");
+
+		$(frm.page.wrapper)
+			.find(selector)
+			.removeClass("btn-default btn-secondary btn-xs")
+			.addClass("btn-primary btn-sm mes-submit-issue-button");
+	});
 }
 
 function show_issue_stock_entry_prompt(frm) {
@@ -338,17 +403,31 @@ function toggle_injection_molding_weight_fields(frm) {
 	rebuild_material_request_item_grid(grid);
 }
 
+function apply_injection_molding_material_issue_warehouse_labels(frm) {
+	if (frm.doc.material_request_type !== INJECTION_MOLDING_PURPOSE) {
+		return;
+	}
+
+	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+
+	if (grid) {
+		grid.update_docfield_property("warehouse", "label", __("From Warehouse"));
+	}
+
+	frm.set_df_property("set_warehouse", "label", __("Set From Warehouse"));
+}
+
 function apply_injection_molding_item_grid(grid) {
 	const injection_columns = [
 		["item_code", 2],
 		["schedule_date", 2],
 		["qty", 1],
-		["custom_transferred_qty", 1],
-		["warehouse", 2],
 		["uom", 1],
-		["projected_qty", 1],
-		["custom_new_material_weight", 1],
-		["custom_recycled_material_weight", 1],
+		["custom_transferred_qty", 1],
+		["warehouse", 3],
+		["actual_qty", 2],
+		["custom_new_material_weight", 2],
+		["custom_recycled_material_weight", 2],
 		["custom_material_request_item_detail_button", 1]
 	];
 	const injection_fieldnames = injection_columns.map(function(column) {

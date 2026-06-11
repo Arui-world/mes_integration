@@ -390,6 +390,7 @@ def create_draft_stock_entry_from_mes(data=None, stock_entry=None):
     set_mes_stock_entry_item_defaults(stock_entry_doc)
     validate_mes_stock_entry_data(stock_entry_doc, sales_order_doc)
     prepare_mes_stock_entry_for_submit(stock_entry_doc)
+    set_allow_zero_valuation_rate_for_mes_items_without_cost(stock_entry_doc)
     stock_entry_doc.insert()
     stock_entry_doc.db_set("stock_entry_type", SEMI_FINISHED_GOODS_RECEIPT, update_modified=False)
     stock_entry_doc.reload()
@@ -576,6 +577,21 @@ def prepare_mes_stock_entry_for_submit(stock_entry):
     stock_entry.set_transfer_qty()
     stock_entry.set_actual_qty()
     stock_entry.calculate_rate_and_amount(raise_error_if_no_rate=False)
+
+
+def set_allow_zero_valuation_rate_for_mes_items_without_cost(stock_entry):
+    for row in stock_entry.get("items", []):
+        if has_mes_stock_entry_item_valuation_cost(row):
+            continue
+
+        row.allow_zero_valuation_rate = 1
+
+
+def has_mes_stock_entry_item_valuation_cost(row):
+    return any(
+        flt(row.get(fieldname)) > 0
+        for fieldname in ("valuation_rate", "basic_rate", "incoming_rate")
+    )
 
 
 def validate_mes_stock_entry_data(stock_entry, sales_order=None):

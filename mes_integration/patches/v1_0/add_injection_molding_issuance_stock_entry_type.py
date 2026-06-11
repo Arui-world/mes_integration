@@ -2,7 +2,7 @@ import frappe
 
 
 STOCK_ENTRY_TYPE_NAME = "Injection Molding Issuance"
-BASE_PURPOSE = "Material Transfer for Manufacture"
+BASE_PURPOSE = "Material Issue"
 
 
 def execute():

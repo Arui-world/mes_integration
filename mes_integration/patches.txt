@@ -23,3 +23,5 @@ mes_integration.patches.v1_0.normalize_receipt_stock_entry_types
 mes_integration.patches.v1_0.protect_receipt_stock_entry_no_client_script
 
 mes_integration.patches.v1_0.add_injection_molding_issuance_stock_entry_type
+
+mes_integration.patches.v1_0.set_injection_molding_issuance_purpose_to_material_issue

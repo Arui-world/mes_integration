@@ -31,26 +31,28 @@ def make_issue_stock_entry(source_name, target_doc=None):
             if flt(source.stock_qty) > flt(source.ordered_qty)
             else 0
         )
+        stock_entry_purpose = get_stock_entry_purpose(source_parent)
         target.qty = qty
         target.transfer_qty = qty * source.conversion_factor
         target.conversion_factor = source.conversion_factor
-        target.s_warehouse = (
-            source.get("from_warehouse")
-            or source.get("warehouse")
-            or source_parent.get("set_from_warehouse")
-        )
-        if get_stock_entry_purpose(source_parent) != "Material Issue":
+
+        if stock_entry_purpose == "Material Issue":
+            target.s_warehouse = source.get("warehouse") or source_parent.get("set_warehouse")
+        else:
+            target.s_warehouse = source.get("from_warehouse") or source_parent.get("set_from_warehouse")
             target.t_warehouse = source_parent.get("set_warehouse") or source.get("warehouse")
 
     def set_missing_values(source, target):
         stock_entry_purpose = get_stock_entry_purpose(source)
         target.purpose = stock_entry_purpose
         target.stock_entry_type = get_stock_entry_type(source)
-        target.from_warehouse = (
-            source.get("set_from_warehouse")
-            or get_single_material_request_item_source_warehouse(source)
-        )
-        if stock_entry_purpose != "Material Issue":
+        if stock_entry_purpose == "Material Issue":
+            target.from_warehouse = (
+                source.get("set_warehouse")
+                or get_single_material_request_item_source_warehouse(source)
+            )
+        else:
+            target.from_warehouse = source.get("set_from_warehouse")
             target.to_warehouse = source.get("set_warehouse")
         target.set_transfer_qty()
         target.set_actual_qty()
@@ -90,7 +92,7 @@ def make_issue_stock_entry(source_name, target_doc=None):
 
 
 def get_stock_entry_purpose(material_request):
-    if material_request.material_request_type == "Material Issue":
+    if material_request.material_request_type in ("Material Issue", "Injection Molding Issuance"):
         return "Material Issue"
 
     return "Material Transfer for Manufacture"
