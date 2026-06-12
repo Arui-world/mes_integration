@@ -1,6 +1,9 @@
 import frappe
 
 
+LOGGED_MATERIAL_REQUEST_TYPES = {"Injection Molding Issuance", "Material Issue"}
+
+
 def create_mes_log(
 	direction,
 	event,
@@ -16,6 +19,7 @@ def create_mes_log(
 	trace_id=None,
 	processed=None,
 	http_status_code=None,
+	batch_no=None,
 ):
 	if not frappe.db.exists("DocType", "MES Integration Log"):
 		return None
@@ -26,6 +30,7 @@ def create_mes_log(
 				"doctype": "MES Integration Log",
 				"direction": direction,
 				"event": event,
+				"batch_no": batch_no,
 				"status": status,
 				"source": source,
 				"user": user or get_current_user(),
@@ -65,7 +70,14 @@ def update_mes_log(log, **values):
 
 
 def log_inbound_material_request(doc, method=None):
+	if method == "after_insert" and not should_log_material_request_creation(doc):
+		return
+
 	log_inbound_document(doc, method)
+
+
+def should_log_material_request_creation(doc):
+	return doc.get("material_request_type") in LOGGED_MATERIAL_REQUEST_TYPES
 
 
 def log_inbound_stock_entry(doc, method=None):
@@ -76,10 +88,7 @@ def log_inbound_document(doc, method=None):
 	if doc.doctype not in ("Material Request", "Stock Entry"):
 		return
 
-	event = {
-		"after_insert": "Document Created",
-		"on_submit": "Document Submitted",
-	}.get(method, method or "Document Event")
+	event = get_inbound_document_event(doc, method)
 
 	create_mes_log(
 		direction="Inbound",
@@ -91,7 +100,25 @@ def log_inbound_document(doc, method=None):
 		request_url=get_request_url(),
 		request_payload=doc.as_dict(no_nulls=True),
 		response_payload={"docstatus": doc.docstatus},
+		batch_no=get_document_batch_no(doc),
 	)
+
+
+def get_document_batch_no(doc):
+	if doc.doctype in ("Material Request", "Stock Entry"):
+		return doc.get("custom_stock_entry_no")
+
+	return None
+
+
+def get_inbound_document_event(doc, method=None):
+	if doc.doctype == "Material Request" and method == "after_insert":
+		return "Material Request Created"
+
+	return {
+		"after_insert": "Document Created",
+		"on_submit": "Document Submitted",
+	}.get(method, method or "Document Event")
 
 
 def get_request_source():

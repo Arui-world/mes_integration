@@ -8,6 +8,7 @@ from erpnext.selling.doctype.sales_order.sales_order import make_delivery_note
 from erpnext.stock.doctype.item.item import get_item_defaults
 
 from crm_integration.crm_integration.sales_order import (
+    DELIVERABLE,
     PENDING_FINAL_PAYMENT,
     PENDING_PRODUCTION,
     set_process_status,
@@ -117,7 +118,7 @@ def validate_sales_order_for_mes_delivery_note(sales_order):
         frappe.throw(_("销售订单 {0} 必须已提交").format(sales_order.name))
 
     process_status = sales_order.get("custom_process_status")
-    if process_status != PENDING_PRODUCTION:
+    if process_status not in (PENDING_PRODUCTION, PENDING_FINAL_PAYMENT):
         frappe.throw(
             _("销售订单 {0} 状态为 {1}，不允许创建出库草稿").format(
                 sales_order.name, process_status or ""
@@ -298,6 +299,104 @@ def append_delivery_note_item(delivery_note, allocation):
     if allocation.batch_no and frappe.db.get_value("Item", sales_order_item.item_code, "has_batch_no"):
         row.batch_no = allocation.batch_no
 
+
+
+
+PENDING_RELEASE = "Pending Release"
+READY_TO_DELIVER = "Ready to Deliver"
+DELIVERED = "Delivered"
+
+
+def set_delivery_readiness_status(doc, method=None):
+    doc.custom_delivery_readiness_status = get_delivery_readiness_status(doc)
+
+
+def validate_delivery_note_ready_to_deliver(doc, method=None):
+    set_delivery_readiness_status(doc, method)
+    if (
+        doc.custom_delivery_readiness_status
+        and doc.custom_delivery_readiness_status != READY_TO_DELIVER
+    ):
+        frappe.throw(_("销售出库关联的销售订单尚未全部放行发货，不能提交。"))
+
+
+def set_delivered_readiness_status(doc, method=None):
+    status = get_delivery_readiness_status(doc)
+    if frappe.db.has_column("Delivery Note", "custom_delivery_readiness_status"):
+        doc.db_set("custom_delivery_readiness_status", status, update_modified=False)
+
+
+def clear_delivery_readiness_status(doc, method=None):
+    if frappe.db.has_column("Delivery Note", "custom_delivery_readiness_status"):
+        doc.db_set("custom_delivery_readiness_status", None, update_modified=False)
+
+
+def get_delivery_readiness_status(doc):
+    statuses = get_linked_sales_order_process_statuses(doc)
+    if not statuses:
+        return None
+
+    if doc.docstatus == 1:
+        return DELIVERED
+
+    if doc.docstatus != 0:
+        return None
+
+    if all(status == DELIVERABLE for status in statuses):
+        return READY_TO_DELIVER
+
+    return PENDING_RELEASE
+
+
+def get_linked_sales_order_process_statuses(doc):
+    sales_orders = sorted(
+        {
+            row.get("against_sales_order")
+            for row in doc.get("items", [])
+            if row.get("against_sales_order")
+        }
+    )
+    if not sales_orders:
+        return []
+
+    rows = frappe.get_all(
+        "Sales Order",
+        filters={"name": ["in", sales_orders]},
+        pluck="custom_process_status",
+    )
+    return [status for status in rows if status]
+
+
+def update_delivery_readiness_status_for_sales_orders(sales_orders):
+    if isinstance(sales_orders, str):
+        sales_orders = [sales_orders]
+
+    sales_orders = [name for name in sales_orders if name]
+    if not sales_orders or not frappe.db.has_column("Delivery Note", "custom_delivery_readiness_status"):
+        return
+
+    delivery_notes = get_draft_delivery_notes_for_sales_orders(sales_orders)
+    for delivery_note_name in delivery_notes:
+        delivery_note = frappe.get_doc("Delivery Note", delivery_note_name)
+        status = get_delivery_readiness_status(delivery_note)
+        if delivery_note.get("custom_delivery_readiness_status") != status:
+            delivery_note.db_set("custom_delivery_readiness_status", status, update_modified=False)
+
+
+def get_draft_delivery_notes_for_sales_orders(sales_orders):
+    placeholders = ", ".join(["%s"] * len(sales_orders))
+    rows = frappe.db.sql(
+        f"""
+        SELECT DISTINCT dn.name
+        FROM `tabDelivery Note` dn
+        INNER JOIN `tabDelivery Note Item` dni ON dni.parent = dn.name
+        WHERE dn.docstatus = 0
+            AND dni.against_sales_order IN ({placeholders})
+        """,
+        tuple(sales_orders),
+        as_dict=True,
+    )
+    return [row.name for row in rows]
 
 def validate_mes_delivery_note_permissions():
     if not frappe.has_permission("Delivery Note", "create"):

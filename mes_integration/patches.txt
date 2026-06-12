@@ -25,3 +25,11 @@ mes_integration.patches.v1_0.protect_receipt_stock_entry_no_client_script
 mes_integration.patches.v1_0.add_injection_molding_issuance_stock_entry_type
 
 mes_integration.patches.v1_0.set_injection_molding_issuance_purpose_to_material_issue
+
+mes_integration.patches.v1_0.backfill_mes_integration_log_batch_no
+
+mes_integration.patches.v1_0.backfill_material_request_log_batch_no
+
+mes_integration.patches.v1_0.add_delivery_note_readiness_status
+
+mes_integration.patches.v1_0.add_delivered_delivery_note_readiness_status

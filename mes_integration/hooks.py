@@ -43,6 +43,7 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 doctype_js = {
+	"Delivery Note": "public/js/delivery_note.js",
 	"Material Request": "public/js/material_request.js",
 	"Stock Entry": "public/js/stock_entry.js",
 	"BOM": "public/js/bom_scrap_rate.js",
@@ -50,6 +51,7 @@ doctype_js = {
 doctype_list_js = {
 	"Material Request": "public/js/material_request_list.js",
 	"Stock Entry": "public/js/stock_entry_list.js",
+	"MES Integration Log": "public/js/mes_integration_log_list.js",
 }
 doctype_css = {"Stock Entry": "public/css/stock_entry.css"}
 
@@ -151,13 +153,17 @@ doctype_css = {"Stock Entry": "public/css/stock_entry.css"}
 # 	}
 # }
 doc_events = {
+	"Delivery Note": {
+		"validate": "mes_integration.mes_integration.delivery_note.set_delivery_readiness_status",
+		"before_submit": "mes_integration.mes_integration.delivery_note.validate_delivery_note_ready_to_deliver",
+		"on_submit": "mes_integration.mes_integration.delivery_note.set_delivered_readiness_status",
+		"on_cancel": "mes_integration.mes_integration.delivery_note.clear_delivery_readiness_status",
+	},
 	"Material Request": {
 		"validate": "mes_integration.mes_integration.material_request.validate_item_details",
 		"after_insert": "mes_integration.mes_integration.integration_log.log_inbound_material_request",
-		"on_submit": "mes_integration.mes_integration.integration_log.log_inbound_material_request",
 	},
 	"Stock Entry": {
-		"after_insert": "mes_integration.mes_integration.integration_log.log_inbound_stock_entry",
 		"on_submit": [
 			"mes_integration.mes_integration.integration_log.log_inbound_stock_entry",
 			"mes_integration.mes_integration.stock_entry.update_material_request_transferred_qty",

@@ -38,6 +38,7 @@ def push_to_mes(stock_entry_name):
             source="ERPNext",
             request_url=get_dlm_material_issue_callback_url(),
             error_message=message,
+            batch_no=stock_entry.get("custom_stock_entry_no"),
         )
         frappe.db.commit()
         frappe.throw(message)
@@ -53,6 +54,7 @@ def push_to_mes(stock_entry_name):
         source="ERPNext",
         request_url=request_url,
         request_payload=payload,
+        batch_no=stock_entry.get("custom_stock_entry_no"),
     )
 
     frappe.logger().info(f"推送库存移动单 {stock_entry_name} 到 DLM: {frappe.as_json(payload)}")
