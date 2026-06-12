@@ -368,21 +368,13 @@ def create_draft_stock_entry_from_mes(data=None, stock_entry=None):
     stock_entry_type = stock_entry_data.get("stock_entry_type")
     validate_mes_receipt_stock_entry_type(stock_entry_type)
 
-    if stock_entry_type == FINISHED_GOODS_RECEIPT:
-        return {
-            "status": "pending_development",
-            "message": frappe._("成品入库接口逻辑暂未实现。"),
-            "stock_entry_type": stock_entry_type,
-            "timestamp": now(),
-        }
-
     stock_entry_data.pop("sales_order", None)
     stock_entry_data.pop("sales_order_name", None)
     if not stock_entry_data.get("company") and sales_order_doc:
         stock_entry_data["company"] = sales_order_doc.company
 
     stock_entry_data["doctype"] = "Stock Entry"
-    stock_entry_data["stock_entry_type"] = SEMI_FINISHED_GOODS_RECEIPT
+    stock_entry_data["stock_entry_type"] = stock_entry_type
     stock_entry_data["purpose"] = "Material Receipt"
     set_mes_stock_entry_default_target_warehouses(stock_entry_data)
 
@@ -392,7 +384,7 @@ def create_draft_stock_entry_from_mes(data=None, stock_entry=None):
     prepare_mes_stock_entry_for_submit(stock_entry_doc)
     set_allow_zero_valuation_rate_for_mes_items_without_cost(stock_entry_doc)
     stock_entry_doc.insert()
-    stock_entry_doc.db_set("stock_entry_type", SEMI_FINISHED_GOODS_RECEIPT, update_modified=False)
+    stock_entry_doc.db_set("stock_entry_type", stock_entry_type, update_modified=False)
     stock_entry_doc.reload()
 
     return {

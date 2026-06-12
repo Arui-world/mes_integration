@@ -151,15 +151,62 @@ function save_submit_and_push_stock_entry_to_dlm(frm) {
 			frm.save("Submit")
 				.then(function() {
 					frm._mes_prompt_after_save_submit = false;
-					setTimeout(function() {
-						push_stock_entry_to_mes(frm);
-					}, 300);
+					push_stock_entry_to_mes_after_save(frm);
 				})
 				.catch(function() {
 					frm._mes_prompt_after_save_submit = false;
 				});
 		}
 	);
+}
+
+
+function push_stock_entry_to_mes_after_save(frm) {
+	wait_for_saved_stock_entry_name(frm)
+		.then(function(stock_entry_name) {
+			push_stock_entry_to_mes(frm, stock_entry_name);
+		})
+		.catch(function() {
+			frappe.msgprint({
+				title: __("提示"),
+				indicator: "orange",
+				message: __("物料移动已提交，但尚未获取正式单号。请刷新后再推送至 DLM。")
+			});
+		});
+}
+
+function wait_for_saved_stock_entry_name(frm, attempt) {
+	attempt = attempt || 0;
+
+	return new Promise(function(resolve, reject) {
+		const stock_entry_name = get_saved_stock_entry_name(frm);
+
+		if (stock_entry_name) {
+			resolve(stock_entry_name);
+			return;
+		}
+
+		if (attempt >= 10) {
+			reject();
+			return;
+		}
+
+		setTimeout(function() {
+			wait_for_saved_stock_entry_name(frm, attempt + 1).then(resolve).catch(reject);
+		}, 300);
+	});
+}
+
+function get_saved_stock_entry_name(frm) {
+	if (!frm || !frm.doc || !frm.doc.name || frm.is_new()) {
+		return null;
+	}
+
+	if (String(frm.doc.name).startsWith("new-")) {
+		return null;
+	}
+
+	return frm.doc.name;
 }
 
 function apply_stock_entry_save_and_submit_button_style(frm) {
@@ -479,7 +526,18 @@ function apply_mes_button_style(frm) {
 	});
 }
 
-function push_stock_entry_to_mes(frm) {
+function push_stock_entry_to_mes(frm, stock_entry_name) {
+	stock_entry_name = stock_entry_name || get_saved_stock_entry_name(frm);
+
+	if (!stock_entry_name) {
+		frappe.msgprint({
+			title: __("提示"),
+			indicator: "orange",
+			message: __("请先保存物料移动并获取正式单号后再推送至 DLM。")
+		});
+		return;
+	}
+
 	if (frm._mes_push_in_progress) {
 		return;
 	}
@@ -493,7 +551,7 @@ function push_stock_entry_to_mes(frm) {
 	frappe.call({
 		method: "mes_integration.mes_integration.stock_entry.push_to_mes",
 		args: {
-			stock_entry_name: frm.doc.name
+			stock_entry_name: stock_entry_name
 		},
 		freeze: true,
 		freeze_message: __("正在推送至 DLM，请稍候..."),
