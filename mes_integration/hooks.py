@@ -49,6 +49,7 @@ doctype_js = {
 	"BOM": "public/js/bom_scrap_rate.js",
 }
 doctype_list_js = {
+	"Delivery Note": "public/js/delivery_note_list.js",
 	"Material Request": "public/js/material_request_list.js",
 	"Stock Entry": "public/js/stock_entry_list.js",
 	"MES Integration Log": "public/js/mes_integration_log_list.js",
